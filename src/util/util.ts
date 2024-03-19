@@ -23,3 +23,23 @@ export const useInterval = (
 }
 
 export const rad = (progress: number) => progress * Math.PI * 2
+
+export const scale = <T extends number | number[]>(
+  input: T,
+  low: number,
+  high: number,
+  lowOut: number,
+  highOut: number,
+  exp: number = 1
+): T => {
+  const scaleNumber = (input: number) => {
+    if (high === low) return lowOut
+    const zTo1 = ((input - low) / (high - low)) ** exp
+    return zTo1 * (highOut - lowOut) + lowOut
+  }
+  if (input instanceof Array) {
+    return input.map(value => scaleNumber(value)) as T
+  } else {
+    return scaleNumber(input) as T
+  }
+}

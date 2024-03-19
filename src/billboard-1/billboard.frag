@@ -2,6 +2,7 @@ varying vec2 vUv;
 varying vec3 vRandom;
 uniform vec3 colors[4];
 uniform vec2 resolution;
+uniform sampler2D tex;
 
 #define PHI 1.4142135
 
@@ -12,5 +13,6 @@ void main() {
   vec3 color = vec3(0.0, 0.0, 0.0);
   vec2 pos = gl_FragCoord.xy / resolution;
 
-  gl_FragColor = vec4((mix(colors[0], colors[1], pos.x) + mix(colors[2], colors[3], pos.y)) / 2.0, 0.7);
+  // gl_FragColor = vec4((mix(colors[0], colors[1], pos.x) + mix(colors[2], colors[3], pos.y)) / 2.0, 0.7);
+  gl_FragColor = texture2D(tex, vUv);
 }

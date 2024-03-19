@@ -4,7 +4,8 @@ import * as THREE from 'three'
 import vertexShader from './billboard.vert?raw'
 import fragmentShader from './billboard.frag?raw'
 import _ from 'lodash'
-import { rad, useEventListener } from '../util/util'
+import { rad, scale, useEventListener } from '../util/util'
+import invariant from 'tiny-invariant'
 
 export default function Billboard() {
   return (
@@ -20,10 +21,48 @@ function Scene() {
 
   const aspectRatio = window.innerWidth / window.innerHeight
 
-  const x = window.innerWidth / 10.0
-  const y = window.innerHeight / 10.0
+  const POINTS = 50
 
-  const { camera, material } = useThree(state => {
+  const geometry = useMemo(() => {
+    const shape = new THREE.Shape()
+    shape.lineTo(-0.5 * SCALE, 0.5 * SCALE)
+    shape.lineTo(0.0 * SCALE, 1.0 * SCALE)
+    shape.lineTo(0.5 * SCALE, 0.33 * SCALE)
+
+    const geometry = new THREE.ShapeGeometry(shape, 5)
+    return geometry
+  }, [])
+
+  const updateLine = (
+    mesh: THREE.InstancedMesh,
+    points: [THREE.Vector2, THREE.Vector2]
+  ) => {
+    const line = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(0.0, -1.0, 0),
+      new THREE.Vector3(...points[0].toArray(), 0),
+      new THREE.Vector3(...points[1].toArray(), 0)
+    )
+    const linePoints = line.getSpacedPoints(
+      // (line.getLength() / SCALE) * LAYERING
+      POINTS
+    )
+
+    for (let i = 0; i < linePoints.length; i++) {
+      const rotation = line.getTangentAt(i / linePoints.length)
+      if (i % 2 === 0) rotation.applyEuler(new THREE.Euler(0, 0, rad(0.5)))
+      // rotation.applyEuler(new THREE.Euler(0, 0, rad(0.25))) // perpendicular
+
+      mesh.setMatrixAt(
+        i,
+        new THREE.Matrix4()
+          .makeRotationZ(new THREE.Vector3(0, 1, 0).angleTo(rotation))
+          .setPosition(linePoints[i])
+      )
+    }
+    mesh.instanceMatrix.needsUpdate = true
+  }
+
+  const { camera, material, meshes } = useThree(state => {
     state.scene.clear()
     state.camera = new THREE.OrthographicCamera(
       -aspectRatio,
@@ -36,85 +75,78 @@ function Scene() {
     state.camera.position.set(0, 0, 0)
     state.camera.updateMatrixWorld()
 
-    const line = new THREE.CubicBezierCurve3(
-      new THREE.Vector3(-1.0, -1.0, 0),
-      new THREE.Vector3(-0.25, 0.25, 0),
-      new THREE.Vector3(0.25, -1.0, 0),
-      new THREE.Vector3(1.0, 1.0, 0)
-    )
-    const linePoints = line.getSpacedPoints(
-      (line.getLength() / SCALE) * LAYERING
-    )
+    // const canvas = new HTMLCanvasElement()
+    // canvas.width = 1080
+    // canvas.height = 1080
+    // const canvas = new OffscreenCanvas(100, 100)
+    // const canvasWorker = new CanvasWorker()
+    // canvasWorker.postMessage({ canvas }, [canvas])
+    // const ctx = canvas.getContext('2d')
+    // invariant(ctx)
+    // ctx.fillStyle = 'green'
+    // ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    const shape = new THREE.Shape()
-    shape.lineTo(-0.5 * SCALE, 0.5 * SCALE)
-    shape.lineTo(0.0 * SCALE, 1.0 * SCALE)
-    shape.lineTo(0.5 * SCALE, 0.33 * SCALE)
-
-    const geometry = new THREE.ShapeGeometry(shape, 5)
-
-    const material = new THREE.ShaderMaterial({
-      vertexShader: vertexShader,
-      fragmentShader: fragmentShader,
-      transparent: true,
-      uniforms: {
-        t: { value: 0 },
-        cursor: { value: new THREE.Vector2(0, 0) },
-        colors: {
-          value: [
-            new THREE.Color().setHSL(0.7, 0.9, 0.8),
-            new THREE.Color().setHSL(0.9, 0.9, 0.8),
-            new THREE.Color().setHSL(0.6, 0.9, 0.8),
-            new THREE.Color().setHSL(0.7, 0.9, 0.8)
-          ]
-        },
-        resolution: {
-          value: new THREE.Vector2(window.innerWidth, window.innerHeight)
-        }
-      }
+    // const texture = new THREE.CanvasTexture(canvas)
+    // const material = new THREE.MeshBasicMaterial({
+    //   map: texture
+    // })
+    const material = new THREE.MeshBasicMaterial({
+      color: 'white'
     })
 
-    const instancedMesh = new THREE.InstancedMesh(
-      geometry,
-      material,
-      linePoints.length
+    // const material = new THREE.ShaderMaterial({
+    //   vertexShader: vertexShader,
+    //   fragmentShader: fragmentShader,
+    //   transparent: true,
+    //   uniforms: {
+    //     t: { value: 0 },
+    //     cursor: { value: new THREE.Vector2(0, 0) },
+    //     colors: {
+    //       value: [
+    //         new THREE.Color().setHSL(0.7, 0.9, 0.8),
+    //         new THREE.Color().setHSL(0.9, 0.9, 0.8),
+    //         new THREE.Color().setHSL(0.6, 0.9, 0.8),
+    //         new THREE.Color().setHSL(0.7, 0.9, 0.8)
+    //       ]
+    //     },
+    //     resolution: {
+    //       value: new THREE.Vector2(window.innerWidth, window.innerHeight)
+    //     },
+    //     tex: { value: texture }
+    //   }
+    // })
+
+    const meshes = _.range(2).map(
+      () => new THREE.InstancedMesh(geometry, material, POINTS)
     )
-    for (let i = 0; i < linePoints.length; i++) {
-      const rotation = linePoints[i]
-        .clone()
-        .sub(linePoints[i - 1] ?? linePoints[1])
-      rotation.applyEuler(new THREE.Euler(0, 0, rad(0.25))) // perpendicular
 
-      instancedMesh.setMatrixAt(
-        i,
-        new THREE.Matrix4()
-          .makeRotationZ(new THREE.Vector3(0, 1, 0).angleTo(rotation))
-          .setPosition(linePoints[i])
-      )
-    }
+    state.scene.add(...meshes)
 
-    instancedMesh.instanceMatrix.needsUpdate = true
-    state.scene.add(instancedMesh)
-
-    return { camera: state.camera, material }
+    return { camera: state.camera, material, meshes }
   })
 
   useFrame(state => {
-    material.uniforms.t.value = state.clock.elapsedTime
-  })
-
-  useEventListener(
-    'mousemove',
-    e => {
-      const cursor = new THREE.Vector2(
-        e.clientX / window.innerWidth,
-        1 - e.clientY / window.innerHeight
+    const t = state.clock.elapsedTime
+    updateLine(meshes[0], [
+      new THREE.Vector2(
+        scale(Math.sin(t * 0.73 + rad(0.33)), -1, 1, 0, 1),
+        scale(Math.cos(t * 0.74 + rad(0.33)), -1, 1, 0, 1)
+      ),
+      new THREE.Vector2(
+        ...scale([Math.sin(t * 0.68), Math.cos(t * 0.73)], -1, 1, 0.5, 1)
       )
-      const value: THREE.Vector2 = material.uniforms.cursor.value
-      value.set(...cursor.toArray())
-    },
-    []
-  )
+    ])
+    updateLine(meshes[1], [
+      new THREE.Vector2(
+        scale(Math.sin(t * 0.73 + rad(0.33)), -1, 1, -1, 0),
+        scale(Math.cos(t * 0.74 + rad(0.33)), -1, 1, 0, 1)
+      ),
+      new THREE.Vector2(
+        scale(Math.sin(t * 0.68), -1, 1, -0.5, -1),
+        scale(Math.cos(t * 0.68), -1, 1, 0.5, 1)
+      )
+    ])
+  })
 
   useEventListener(
     'mousedown',
