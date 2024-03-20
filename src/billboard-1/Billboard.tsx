@@ -7,6 +7,9 @@ import _ from 'lodash'
 import { rad, scale, useEventListener, useMemoCleanup } from '../util/util'
 import invariant from 'tiny-invariant'
 import p5 from 'p5'
+import * as animS from '../util/p5.anims'
+import { useSpring, easings } from '@react-spring/web'
+import * as ease from 'd3-ease'
 
 export default function Billboard() {
   return (
@@ -27,12 +30,7 @@ function Scene() {
   const POINTS = 50
 
   const geometry = useMemo(() => {
-    const shape = new THREE.Shape()
-    shape.lineTo(-0.5 * SCALE, 0.5 * SCALE)
-    shape.lineTo(0.0 * SCALE, 1.0 * SCALE)
-    shape.lineTo(0.5 * SCALE, 0.33 * SCALE)
-
-    const geometry = new THREE.ShapeGeometry(shape, 5)
+    const geometry = new THREE.PlaneGeometry(1, 1)
     return geometry
   }, [])
 
@@ -70,15 +68,15 @@ function Scene() {
       const canvas = document.createElement('canvas') as HTMLCanvasElement
       canvas.width = 1080
       canvas.height = 1080
-      document.body.insertAdjacentElement('afterbegin', canvas)
+      // document.body.insertAdjacentElement('afterbegin', canvas)
       const p = new p5((p: p5) => {
         p.setup = () => {
-          p.clear()
-          p.background('black')
           // @ts-expect-error
           p.createCanvas(1080, 1080, p.WEBGL2, canvas)
           p.noFill()
           p.stroke('white')
+
+          p.background('white')
         }
 
         p.draw = () => {
@@ -86,10 +84,10 @@ function Scene() {
           p.scale(p.width / 2, p.height / 2)
           p.strokeWeight(0.01)
 
-          const t = p.millis()
+          const t = ease.easeExpOut(((p.millis() / 1000) * 0.3) % 1)
 
           p.clear()
-          const points = [
+          const points: [number, number][] = [
             [-0.51, 0.35],
             [-0.03, 0.43],
             [0.55, -0.23],
@@ -98,13 +96,16 @@ function Scene() {
             [-0.24, -0.22]
           ]
 
-          let lastPoint: [number, number] = [0, 0]
-          p.beginShape()
-          p.vertex(0, 0)
-          for (let [x, y] of points) {
-            p.curveVertex(x, y)
+          const curve = new THREE.SplineCurve(
+            points.map(([x, y]) => new THREE.Vector2(x, y))
+          )
+          const lines = curve.getPoints(p.width)
+
+          for (let i = 0; i < t * lines.length; i++) {
+            p.point(lines[i].x, lines[i].y)
           }
-          p.endShape()
+
+          texture.needsUpdate = true
         }
       })
 
@@ -113,7 +114,7 @@ function Scene() {
     },
     ({ p, texture, canvas }) => {
       canvas.remove()
-      texture.dispose()
+      // texture.dispose()
       p.remove()
     },
     []
@@ -138,7 +139,6 @@ function Scene() {
       transparent: true,
       uniforms: {
         t: { value: 0 },
-        cursor: { value: new THREE.Vector2(0, 0) },
         colors: {
           value: [
             new THREE.Color().setHSL(0.7, 0.9, 0.8),
