@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect } from 'react'
 
 export const useEventListener = <K extends keyof WindowEventMap>(
   listener: K,
@@ -42,26 +42,4 @@ export const scale = <T extends number | number[]>(
   } else {
     return scaleNumber(input) as T
   }
-}
-
-export const create = <T>(e: T, onCreate: (argument: T) => void) => {
-  onCreate(e)
-  return e
-}
-
-export const useMemoCleanup = <T>(
-  create: () => T,
-  cleanup: (item: T) => void,
-  deps: any[] = []
-) => {
-  const itemRef = useRef<T | null>(null)
-  const item = useMemo(() => {
-    if (itemRef.current) {
-      cleanup(itemRef.current)
-      itemRef.current = null
-    }
-    return create()
-  }, deps)
-  itemRef.current = item
-  return item
 }

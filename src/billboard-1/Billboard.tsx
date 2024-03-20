@@ -1,27 +1,17 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import _ from 'lodash'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as THREE from 'three'
-import {
-  rad,
-  scale,
-  useEventListener,
-  create,
-  useMemoCleanup
-} from '../util/util'
 import vertexShader from './billboard.vert?raw'
 import fragmentShader from './billboard.frag?raw'
-import { CanvasForm } from 'pts'
-import p5 from 'p5'
+import _ from 'lodash'
+import { rad, scale, useEventListener } from '../util/util'
+import invariant from 'tiny-invariant'
 
 export default function Billboard() {
   return (
-    <>
-      <canvas id='test' height={1080} width={1080}></canvas>
-      <Canvas>
-        <Scene />
-      </Canvas>
-    </>
+    <Canvas>
+      <Scene />
+    </Canvas>
   )
 }
 
@@ -33,121 +23,15 @@ function Scene() {
 
   const POINTS = 50
 
-  // const geometry = useMemo(() => {
-  //   const shape = new THREE.Shape()
-  //   shape.lineTo(-0.5, 0.5)
-  //   shape.lineTo(0.0, 1.0)
-  //   shape.lineTo(0.5, 0.33)
+  const geometry = useMemo(() => {
+    const shape = new THREE.Shape()
+    shape.lineTo(-0.5 * SCALE, 0.5 * SCALE)
+    shape.lineTo(0.0 * SCALE, 1.0 * SCALE)
+    shape.lineTo(0.5 * SCALE, 0.33 * SCALE)
 
-  //   const geometry = new THREE.ShapeGeometry(shape, 5)
-  //   geometry.scale(SCALE, SCALE, SCALE)
-  //   return geometry
-  // }, [])
-
-  const canvas = useMemoCleanup(
-    () => {
-      const canvas = document.createElement('canvas') as HTMLCanvasElement
-      canvas.width = 1080
-      canvas.height = 1080
-      return canvas
-    },
-    canvas => {
-      canvas.remove()
-    },
-    []
-  )
-
-  const { texture: offscreenTexture, p } = useMemoCleanup(
-    () => {
-      // const oRenderer = create(new THREE.WebGLRenderer({ canvas }), e => {
-      //   e.setClearColor(new THREE.Color(0, 0, 0), 0)
-      // })
-      // const oScene = new THREE.Scene()
-      // // for (let i = 0; i < 10; i++) {
-
-      // // }
-      // oScene.add(
-      //   create(
-      //     new THREE.Mesh(
-      //       create(new THREE.BufferGeometry(), e => {
-      //         e.setFromPoints([
-      //           new THREE.Vector2(0, 0),
-      //           new THREE.Vector2(1, 1),
-      //           new THREE.Vector2(0, 1),
-      //           new THREE.Vector2(1, 1),
-      //           new THREE.Vector2(0, 0),
-      //           new THREE.Vector2(1, 0)
-      //         ])
-      //       }),
-      //       new THREE.MeshBasicMaterial({ color: 'white' })
-      //     ),
-      //     e => {
-      //       e.position.set(0, 0, 0)
-      //       // const SCALE = 10
-      //       // e.scale.set(Math.random() / SCALE, Math.random() / SCALE, 1)
-      //       // e.position.set(Math.random(), Math.random(), 0)
-      //     }
-      //   )
-      // )
-
-      // const oCamera = new THREE.OrthographicCamera(0, 1, 1, 0, 0, 2)
-      // oCamera.position.set(0, 0, 0)
-
-      // oRenderer.render(oScene, oCamera)
-
-      const p = new p5((p: p5) => {
-        p.setup = () => {
-          p.createCanvas(
-            1080,
-            1080,
-            undefined,
-            document.getElementById('test') as HTMLCanvasElement
-          )
-          p.strokeWeight(10)
-          p.stroke('white')
-          p.noFill()
-          p.scale(p.width / 2, p.height / 2)
-          p.translate(p.width / 2, p.height / 2)
-          p.bezier(0.2, 0.2, -0.82, -0.58, -0.28, 0.58, 0.47, 0.15)
-          p.bezier(0.47, 0.15, 0.27, -0.65, -0.44, -0.57, 0.17, -0.84)
-        }
-
-        p.draw = () => {
-          p.clear()
-          const createAsemic = () => {
-            const t = p.millis()
-            p.bezier(0.2, 0.2, -0.82, -0.58, -0.28, 0.58, 0.47, 0.15)
-            p.bezier(0.47, 0.15, 0.27, -0.65, -0.44, -0.57, 0.17, -0.84)
-            const pathLength = t % 750
-            // p.beginShape(p.POINTS)
-            // for (let [x, y] of [
-            //   [-0.32, 0.42],
-            //   [-0.32, 0.42],
-            //   [0.12, 0.63],
-            //   [0.27, -0.54],
-            //   [-0.37, -0.1],
-            //   [-0.28, -0.02],
-            //   [-0.72, 0.4],
-            //   [-0.72, 0.4]
-            // ]) {
-            //   p.curveVertex(x, y)
-            // }
-            // p.endShape()
-          }
-
-          createAsemic()
-        }
-      })
-
-      const texture = new THREE.CanvasTexture(canvas)
-      return { texture, p }
-    },
-    ({ texture, p }) => {
-      // texture.dispose()
-      // p.remove()
-    },
-    []
-  )
+    const geometry = new THREE.ShapeGeometry(shape, 5)
+    return geometry
+  }, [])
 
   const updateLine = (
     mesh: THREE.InstancedMesh,
@@ -166,6 +50,7 @@ function Scene() {
     for (let i = 0; i < linePoints.length; i++) {
       const rotation = line.getTangentAt(i / linePoints.length)
       if (i % 2 === 0) rotation.applyEuler(new THREE.Euler(0, 0, rad(0.5)))
+      // rotation.applyEuler(new THREE.Euler(0, 0, rad(0.25))) // perpendicular
 
       mesh.setMatrixAt(
         i,
@@ -190,33 +75,49 @@ function Scene() {
     state.camera.position.set(0, 0, 0)
     state.camera.updateMatrixWorld()
 
-    const material = new THREE.ShaderMaterial({
-      vertexShader: vertexShader,
-      fragmentShader: fragmentShader,
-      transparent: true,
-      uniforms: {
-        t: { value: 0 },
-        cursor: { value: new THREE.Vector2(0, 0) },
-        colors: {
-          value: [
-            new THREE.Color().setHSL(0.7, 0.9, 0.8),
-            new THREE.Color().setHSL(0.9, 0.9, 0.8),
-            new THREE.Color().setHSL(0.6, 0.9, 0.8),
-            new THREE.Color().setHSL(0.7, 0.9, 0.8)
-          ]
-        },
-        resolution: {
-          value: new THREE.Vector2(window.innerWidth, window.innerHeight)
-        },
-        tex: { value: offscreenTexture }
-      }
+    // const canvas = new HTMLCanvasElement()
+    // canvas.width = 1080
+    // canvas.height = 1080
+    // const canvas = new OffscreenCanvas(100, 100)
+    // const canvasWorker = new CanvasWorker()
+    // canvasWorker.postMessage({ canvas }, [canvas])
+    // const ctx = canvas.getContext('2d')
+    // invariant(ctx)
+    // ctx.fillStyle = 'green'
+    // ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    // const texture = new THREE.CanvasTexture(canvas)
+    // const material = new THREE.MeshBasicMaterial({
+    //   map: texture
+    // })
+    const material = new THREE.MeshBasicMaterial({
+      color: 'white'
     })
 
-    const testGeo = create(new THREE.PlaneGeometry(1, 1), e => {
-      e.scale(0.1, 0.1, 1)
-    })
+    // const material = new THREE.ShaderMaterial({
+    //   vertexShader: vertexShader,
+    //   fragmentShader: fragmentShader,
+    //   transparent: true,
+    //   uniforms: {
+    //     t: { value: 0 },
+    //     cursor: { value: new THREE.Vector2(0, 0) },
+    //     colors: {
+    //       value: [
+    //         new THREE.Color().setHSL(0.7, 0.9, 0.8),
+    //         new THREE.Color().setHSL(0.9, 0.9, 0.8),
+    //         new THREE.Color().setHSL(0.6, 0.9, 0.8),
+    //         new THREE.Color().setHSL(0.7, 0.9, 0.8)
+    //       ]
+    //     },
+    //     resolution: {
+    //       value: new THREE.Vector2(window.innerWidth, window.innerHeight)
+    //     },
+    //     tex: { value: texture }
+    //   }
+    // })
+
     const meshes = _.range(2).map(
-      () => new THREE.InstancedMesh(testGeo, material, POINTS)
+      () => new THREE.InstancedMesh(geometry, material, POINTS)
     )
 
     state.scene.add(...meshes)
@@ -258,7 +159,6 @@ function Scene() {
         .unproject(camera)
         .setZ(0)
         .toArray()
-        .slice(0, 2)
         .map(x => x.toFixed(2))
         .join(', ')}`
       window.navigator.clipboard.writeText(text)
