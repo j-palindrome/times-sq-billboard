@@ -4,14 +4,17 @@ import * as THREE from 'three'
 import vertexShader from './billboard.vert?raw'
 import fragmentShader from './billboard.frag?raw'
 import _ from 'lodash'
-import { rad, scale, useEventListener } from '../util/util'
+import { rad, scale, useEventListener, useMemoCleanup } from '../util/util'
 import invariant from 'tiny-invariant'
+import p5 from 'p5'
 
 export default function Billboard() {
   return (
-    <Canvas>
-      <Scene />
-    </Canvas>
+    <>
+      <Canvas>
+        <Scene />
+      </Canvas>
+    </>
   )
 }
 
@@ -62,6 +65,60 @@ function Scene() {
     mesh.instanceMatrix.needsUpdate = true
   }
 
+  const { texture, p } = useMemoCleanup(
+    () => {
+      const canvas = document.createElement('canvas') as HTMLCanvasElement
+      canvas.width = 1080
+      canvas.height = 1080
+      document.body.insertAdjacentElement('afterbegin', canvas)
+      const p = new p5((p: p5) => {
+        p.setup = () => {
+          p.clear()
+          p.background('black')
+          // @ts-expect-error
+          p.createCanvas(1080, 1080, p.WEBGL2, canvas)
+          p.noFill()
+          p.stroke('white')
+        }
+
+        p.draw = () => {
+          p.translate(p.width / 2, p.height / 2)
+          p.scale(p.width / 2, p.height / 2)
+          p.strokeWeight(0.01)
+
+          const t = p.millis()
+
+          p.clear()
+          const points = [
+            [-0.51, 0.35],
+            [-0.03, 0.43],
+            [0.55, -0.23],
+            [0.01, -0.72],
+            [-0.77, -0.57],
+            [-0.24, -0.22]
+          ]
+
+          let lastPoint: [number, number] = [0, 0]
+          p.beginShape()
+          p.vertex(0, 0)
+          for (let [x, y] of points) {
+            p.curveVertex(x, y)
+          }
+          p.endShape()
+        }
+      })
+
+      const texture = new THREE.CanvasTexture(canvas)
+      return { texture, p, canvas }
+    },
+    ({ p, texture, canvas }) => {
+      canvas.remove()
+      texture.dispose()
+      p.remove()
+    },
+    []
+  )
+
   const { camera, material, meshes } = useThree(state => {
     state.scene.clear()
     state.camera = new THREE.OrthographicCamera(
@@ -75,46 +132,27 @@ function Scene() {
     state.camera.position.set(0, 0, 0)
     state.camera.updateMatrixWorld()
 
-    // const canvas = new HTMLCanvasElement()
-    // canvas.width = 1080
-    // canvas.height = 1080
-    // const canvas = new OffscreenCanvas(100, 100)
-    // const canvasWorker = new CanvasWorker()
-    // canvasWorker.postMessage({ canvas }, [canvas])
-    // const ctx = canvas.getContext('2d')
-    // invariant(ctx)
-    // ctx.fillStyle = 'green'
-    // ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-    // const texture = new THREE.CanvasTexture(canvas)
-    // const material = new THREE.MeshBasicMaterial({
-    //   map: texture
-    // })
-    const material = new THREE.MeshBasicMaterial({
-      color: 'white'
+    const material = new THREE.ShaderMaterial({
+      vertexShader: vertexShader,
+      fragmentShader: fragmentShader,
+      transparent: true,
+      uniforms: {
+        t: { value: 0 },
+        cursor: { value: new THREE.Vector2(0, 0) },
+        colors: {
+          value: [
+            new THREE.Color().setHSL(0.7, 0.9, 0.8),
+            new THREE.Color().setHSL(0.9, 0.9, 0.8),
+            new THREE.Color().setHSL(0.6, 0.9, 0.8),
+            new THREE.Color().setHSL(0.7, 0.9, 0.8)
+          ]
+        },
+        resolution: {
+          value: new THREE.Vector2(window.innerWidth, window.innerHeight)
+        },
+        tex: { value: texture }
+      }
     })
-
-    // const material = new THREE.ShaderMaterial({
-    //   vertexShader: vertexShader,
-    //   fragmentShader: fragmentShader,
-    //   transparent: true,
-    //   uniforms: {
-    //     t: { value: 0 },
-    //     cursor: { value: new THREE.Vector2(0, 0) },
-    //     colors: {
-    //       value: [
-    //         new THREE.Color().setHSL(0.7, 0.9, 0.8),
-    //         new THREE.Color().setHSL(0.9, 0.9, 0.8),
-    //         new THREE.Color().setHSL(0.6, 0.9, 0.8),
-    //         new THREE.Color().setHSL(0.7, 0.9, 0.8)
-    //       ]
-    //     },
-    //     resolution: {
-    //       value: new THREE.Vector2(window.innerWidth, window.innerHeight)
-    //     },
-    //     tex: { value: texture }
-    //   }
-    // })
 
     const meshes = _.range(2).map(
       () => new THREE.InstancedMesh(geometry, material, POINTS)
@@ -148,6 +186,12 @@ function Scene() {
     ])
   })
 
+  const points = useRef<[number, number][]>([])
+  useEventListener('keydown', ev => {
+    if (ev.key === '.') {
+      points.current = []
+    }
+  })
   useEventListener(
     'mousedown',
     e => {
@@ -155,14 +199,21 @@ function Scene() {
         (e.clientX / window.innerWidth) * 2 - 1,
         (1 - e.clientY / window.innerHeight) * 2 - 1
       ]
-      const text = `${new THREE.Vector3(coord[0], coord[1], 0)
+      const text = new THREE.Vector3(coord[0], coord[1], 0)
         .unproject(camera)
         .setZ(0)
         .toArray()
-        .map(x => x.toFixed(2))
-        .join(', ')}`
-      window.navigator.clipboard.writeText(text)
-      console.log(text)
+        .slice(0, 2)
+
+      points.current.push(text as [number, number])
+      const t =
+        '[' +
+        points.current
+          .map(x => `[${x.map(x => x.toFixed(2)).join(', ')}]`)
+          .join(', ') +
+        ']'
+      window.navigator.clipboard.writeText(t)
+      console.log(t)
     },
     []
   )
