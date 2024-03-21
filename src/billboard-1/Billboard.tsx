@@ -18,6 +18,7 @@ import p5 from 'p5'
 import { useSpring, easings } from '@react-spring/web'
 import * as ease from 'd3-ease'
 import { Num } from 'pts'
+import { create } from '../util/util'
 
 export default function Billboard() {
   return (
@@ -38,9 +39,7 @@ function Scene() {
   const POINTS = 50
 
   const geometry = useMemo(() => {
-    const geometry = new THREE.PlaneGeometry(5, 1)
-      .translate(2.5, 0, 0)
-      .scale(0.5, 0.5, 1)
+    const geometry = new THREE.PlaneGeometry(1, 1 / 5).translate(0.5, 1 / 10, 0)
     geometry.setAttribute(
       'random',
       new THREE.InstancedBufferAttribute(
@@ -57,6 +56,18 @@ function Scene() {
         1
       )
     )
+    geometry.setAttribute(
+      'texIndex',
+      create(
+        new THREE.InstancedBufferAttribute(
+          new Int16Array(_.range(POINTS).map(i => i % 5)),
+          1
+        ),
+        e => {
+          e.gpuType = THREE.IntType
+        }
+      )
+    )
 
     return geometry
   }, [])
@@ -68,26 +79,20 @@ function Scene() {
 
   const updateLine = (
     mesh: THREE.InstancedMesh,
-    points: [THREE.Vector2, THREE.Vector2],
+    points: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
     scaling: number
   ) => {
-    const origin = new THREE.Vector3(0.0, -1.1, 0)
-    const p1 = new THREE.Vector3(points[0].x, points[0].y)
-    const p2 = new THREE.Vector3(points[1].x, points[1].y)
+    const origin = points[0]
+    const p1 = points[1]
+    const p2 = points[2]
 
     const curveLeft = origin.x > p2.x ? 1 : -1
 
     const correction = origin.clone().multiplyScalar(-1)
     const line = new THREE.QuadraticBezierCurve3(
       origin.clone().add(correction).multiplyScalar(scaling).sub(correction),
-      new THREE.Vector3(...points[0].toArray(), 0)
-        .add(correction)
-        .multiplyScalar(scaling)
-        .sub(correction),
-      new THREE.Vector3(...points[1].toArray(), 0)
-        .add(correction)
-        .multiplyScalar(scaling)
-        .sub(correction)
+      p1.clone().add(correction).multiplyScalar(scaling).sub(correction),
+      p2.clone().add(correction).multiplyScalar(scaling).sub(correction)
     )
     const linePoints = line.getSpacedPoints(
       // (line.getLength() / SCALE) * LAYERING
@@ -107,12 +112,12 @@ function Scene() {
     const basis = new THREE.Vector3(1, 0, 0)
     for (let i = 0; i < linePoints.length; i++) {
       const rotation = tangents[i].clone().angleTo(basis)
-      const scaleVal = scale(curves[i], minCurve, maxCurve, 0.5, 2)
+      const scaleVal = scale(curves[i], minCurve, maxCurve, 0.2, 1)
 
       mesh.setMatrixAt(
         i,
         new THREE.Matrix4()
-          .makeRotationZ(rotation + rad(-0.25 * curveLeft) + rad(0.5 * (i % 2)))
+          .makeRotationZ(rotation + rad(-0.25 * curveLeft))
           .multiply(new THREE.Matrix4().makeScale(scaleVal, scaleVal, 1))
           .setPosition(linePoints[i])
       )
@@ -131,16 +136,6 @@ function Scene() {
         canvas.height = SQUARE
         // document.body.insertAdjacentElement('afterbegin', canvas)
         const p = new p5((p: p5) => {
-          p.setup = () => {
-            // @ts-expect-error
-            p.createCanvas(SQUARE * 5, SQUARE, p.WEBGL2, canvas)
-            p.noFill()
-            p.stroke('white')
-            p.colorMode('hsl', 1)
-            // p.strokeWeight(10)
-            // p.rect(0, 0, p.width, p.height)
-          }
-
           const points = _.range(5).flatMap(i => {
             const points: [number, number][] = _.sortBy(
               [
@@ -156,39 +151,26 @@ function Scene() {
             return points
           })
 
-          let lastT = 0
-          let lastIntermediateT = 0
+          p.setup = () => {
+            // @ts-expect-error
+            p.createCanvas(SQUARE * 5, SQUARE, p.WEBGL2, canvas)
+            p.noFill()
+            p.stroke('white')
+            p.colorMode('hsl', 1)
 
-          p.draw = () => {
             p.translate(p.height / 2, p.height / 2)
             p.scale(p.height / 2, p.height / 2)
             p.strokeWeight(0.01)
 
-            const t = time.current
-            if (t < 1 - 0.5 ** 2) {
-              p.stroke('white')
-            } else {
-              p.stroke('black')
-            }
-            if (t < lastT) {
-              p.clear()
-            }
-            lastT = t
-
-            const intermediateT = scale(t, 0, 1, 0, 2, 2) % 1
-
+            // p.rect(0, 0, p.width, p.height)
             const curve = new THREE.SplineCurve(
               points.map(([x, y]) => new THREE.Vector2(x, y))
             )
             const lines = curve.getPoints(p.width)
 
-            for (let i = 0; i < intermediateT * lines.length; i++) {
+            for (let i = 0; i < lines.length; i++) {
               if (i % (lines.length / 5) >= 200) p.point(lines[i].x, lines[i].y)
             }
-
-            lastIntermediateT = intermediateT
-
-            texture.needsUpdate = true
           }
         })
 
@@ -248,25 +230,27 @@ function Scene() {
     time.current = (state.clock.elapsedTime * 0.3) % 1
 
     const points: [number, number][] = [
-      [0, -1],
-      [0, 0.78],
-      [aspectRatio, 0.75]
+      [0.2, -1],
+      [0.5, 0],
+      [aspectRatio, 0]
     ]
 
     const t = time.current
     updateLine(
       meshes[0],
       [
-        new THREE.Vector2(points[1][0] * -1, points[1][1]),
-        new THREE.Vector2(points[2][0] * -1, points[2][1])
+        new THREE.Vector3(points[0][0] * -1, points[0][1]),
+        new THREE.Vector3(points[1][0] * -1, points[1][1]),
+        new THREE.Vector3(points[2][0] * -1, points[2][1])
       ],
       1
     )
     updateLine(
       meshes[1],
       [
-        new THREE.Vector2(points[1][0], points[1][1]),
-        new THREE.Vector2(points[2][0], points[2][1])
+        new THREE.Vector3(points[0][0], points[0][1]),
+        new THREE.Vector3(points[1][0], points[1][1]),
+        new THREE.Vector3(points[2][0], points[2][1])
       ],
       1
     )

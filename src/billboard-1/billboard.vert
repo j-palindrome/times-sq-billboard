@@ -1,8 +1,10 @@
 uniform vec2 cursor;
 attribute float random;
 attribute float index;
+attribute int texIndex;
 
 flat varying float vIndex;
+flat varying int vTexIndex;
 varying float vRandom;
 varying vec2 vUv;
 
@@ -12,4 +14,5 @@ void main() {
   vUv = uv;
   vRandom = random;
   vIndex = index;
+  vTexIndex = texIndex;
 }
