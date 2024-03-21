@@ -40,8 +40,29 @@ function Scene() {
     const geometry = new THREE.PlaneGeometry(5, 1)
       .translate(0.5, 0.5, -0)
       .scale(0.5, 0.5, 1)
+    geometry.setAttribute(
+      'random',
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(
+          _.range(POINTS).map(() => Math.floor(Math.random() * 5))
+        ),
+        1
+      )
+    )
+    geometry.setAttribute(
+      'index',
+      new THREE.InstancedBufferAttribute(
+        new Int16Array(_.range(POINTS).map(i => i)),
+        1
+      )
+    )
     return geometry
   }, [])
+
+  const randomRotations = useMemo(
+    () => _.range(POINTS).map(() => rad(Math.random())),
+    []
+  )
 
   const updateLine = (
     mesh: THREE.InstancedMesh,
@@ -69,8 +90,9 @@ function Scene() {
     const { tangents } = line.computeFrenetFrames(linePoints.length)
 
     for (let i = 0; i < linePoints.length; i++) {
-      const rotation = tangents[i]
-      if (i % 2 === 0) rotation.applyEuler(new THREE.Euler(0, 0, rad(0.5)))
+      const rotation = tangents[i].clone()
+      rotation.applyEuler(new THREE.Euler().set(0, 0, randomRotations[i]))
+
       // rotation.applyEuler(new THREE.Euler(0, 0, rad(0.25))) // perpendicular
 
       const scaleVal = scale(
@@ -93,7 +115,7 @@ function Scene() {
       mesh.setMatrixAt(
         i,
         new THREE.Matrix4()
-          .makeRotationZ(new THREE.Vector3(0, 1, 0).angleTo(rotation))
+          .makeRotationZ(new THREE.Vector3(1, 0, 0).angleTo(rotation))
           .multiply(new THREE.Matrix4().makeScale(scaleVal, scaleVal, 1))
           .setPosition(linePoints[i])
       )
@@ -103,69 +125,91 @@ function Scene() {
 
   const time = useRef<number>(0)
 
-  const { texture, p } = useMemoCleanup(
-    () => {
-      const canvas = document.createElement('canvas') as HTMLCanvasElement
-      const SQUARE = 1080
-      canvas.width = SQUARE * 5
-      canvas.height = SQUARE
-      // document.body.insertAdjacentElement('afterbegin', canvas)
-      const p = new p5((p: p5) => {
-        p.setup = () => {
-          // @ts-expect-error
-          p.createCanvas(SQUARE * 5, SQUARE, p.WEBGL2, canvas)
-          p.noFill()
-          p.stroke('white')
-          p.colorMode('hsl', 1)
-        }
-
-        const points = _.range(5).flatMap(i => {
-          const points: [number, number][] = _.sortBy(
-            [
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)]
-            ],
-            x => x[0] + x[1]
-          )
-          return points
-        })
-
-        p.draw = () => {
-          p.translate(p.height / 2, p.height / 2)
-          p.scale(p.height / 2, p.height / 2)
-          p.strokeWeight(0.01)
-
-          const t = time.current
-          p.clear()
-
-          const curve = new THREE.SplineCurve(
-            points.map(([x, y]) => new THREE.Vector2(x, y))
-          )
-          const lines = curve.getPoints(p.width)
-
-          for (let i = 0; i < t * lines.length; i++) {
-            if (i % (lines.length / 5) < 200) continue
-            p.point(lines[i].x, lines[i].y)
+  const createTexture = () => {
+    const { texture, p } = useMemoCleanup(
+      () => {
+        const canvas = document.createElement('canvas') as HTMLCanvasElement
+        const SQUARE = 1080
+        canvas.width = SQUARE * 5
+        canvas.height = SQUARE
+        // document.body.insertAdjacentElement('afterbegin', canvas)
+        const p = new p5((p: p5) => {
+          p.setup = () => {
+            // @ts-expect-error
+            p.createCanvas(SQUARE * 5, SQUARE, p.WEBGL2, canvas)
+            p.noFill()
+            p.stroke('white')
+            p.colorMode('hsl', 1)
           }
 
-          texture.needsUpdate = true
-        }
-      })
+          const points = _.range(5).flatMap(i => {
+            const points: [number, number][] = _.sortBy(
+              [
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)]
+              ],
+              x => x[0] + x[1]
+            )
+            return points
+          })
 
-      const texture = new THREE.CanvasTexture(canvas)
-      return { texture, p, canvas }
-    },
-    ({ p, texture, canvas }) => {
-      canvas.remove()
-      // texture.dispose()
-      p.remove()
-    },
-    []
-  )
+          let lastT = 0
+          let lastIntermediateT = 0
+
+          p.draw = () => {
+            p.translate(p.height / 2, p.height / 2)
+            p.scale(p.height / 2, p.height / 2)
+            p.strokeWeight(0.01)
+
+            const t = time.current
+            if (t > 1 - 0.5 ** 2) {
+              p.stroke('black')
+            } else {
+              p.stroke('white')
+            }
+            if (t < lastT) {
+              p.clear()
+            }
+            lastT = t
+
+            const intermediateT = scale(t, 0, 1, 0, 2, 2) % 1
+
+            const curve = new THREE.SplineCurve(
+              points.map(([x, y]) => new THREE.Vector2(x, y))
+            )
+            const lines = curve.getPoints(p.width)
+
+            for (
+              let i = Math.floor(lastIntermediateT * lines.length);
+              i < intermediateT * lines.length;
+              i++
+            ) {
+              if (i % (lines.length / 5) >= 200) p.point(lines[i].x, lines[i].y)
+            }
+
+            lastIntermediateT = intermediateT
+
+            texture.needsUpdate = true
+          }
+        })
+
+        const texture = new THREE.CanvasTexture(canvas)
+        return { texture, p, canvas }
+      },
+      ({ p, texture, canvas }) => {
+        canvas.remove()
+        // texture.dispose()
+        p.remove()
+      },
+      []
+    )
+    return texture
+  }
+  const textures = _.range(5).map(x => createTexture())
 
   const { camera, material, meshes } = useThree(state => {
     state.scene.clear()
@@ -197,7 +241,12 @@ function Scene() {
         resolution: {
           value: new THREE.Vector2(window.innerWidth, window.innerHeight)
         },
-        tex: { value: texture }
+        tex0: { value: textures[0] },
+        tex1: { value: textures[1] },
+        tex2: { value: textures[2] },
+        tex3: { value: textures[3] },
+        tex4: { value: textures[4] },
+        points: { value: POINTS }
       }
     })
 
@@ -211,8 +260,9 @@ function Scene() {
   })
 
   useFrame(state => {
-    const t = (state.clock.elapsedTime * 0.3) % 1
-    time.current = t
+    time.current = (state.clock.elapsedTime * 0.3) % 1
+
+    const t = time.current ** 0.2
     updateLine(
       meshes[0],
       [
