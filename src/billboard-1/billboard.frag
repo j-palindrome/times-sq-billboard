@@ -1,8 +1,12 @@
 varying vec2 vUv;
-varying vec3 vRandom;
+flat varying int vRandom;
 uniform vec3 colors[4];
 uniform vec2 resolution;
-uniform sampler2D tex;
+uniform sampler2D tex0;
+uniform sampler2D tex1;
+uniform sampler2D tex2;
+uniform sampler2D tex3;
+uniform sampler2D tex4;
 
 #define PHI 1.4142135
 
@@ -13,7 +17,28 @@ void main() {
   vec3 color = vec3(0.0, 0.0, 0.0);
   vec2 pos = gl_FragCoord.xy / resolution;
 
-  vec4 mask = texture2D(tex, vUv);
+  vec4 mask;
+
+  // switch(vRandom) {
+  //   case 0:
+  //     mask = texture2D(tex0, pos);
+  //     break;
+  //   case 1:
+  //     mask = texture2D(tex1, pos);
+  //     break;
+  //   case 2:
+  //     mask = texture2D(tex2, pos);
+  //     break;
+  //   case 3:
+  //     mask = texture2D(tex3, pos);
+  //     break;
+  //   case 4:
+  //     mask = texture2D(tex4, pos);
+  //     break;
+  // };
+
+  mask = texture2D(tex0, pos);
+
   if(mask.a == 0.0) {
     discard;
   }

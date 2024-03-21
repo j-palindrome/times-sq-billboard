@@ -29,9 +29,6 @@ export default function Billboard() {
 }
 
 function Scene() {
-  const SCALE = 0.2
-  const LAYERING = 1.5
-
   const aspectRatio = window.innerWidth / window.innerHeight
 
   const POINTS = 50
@@ -40,6 +37,18 @@ function Scene() {
     const geometry = new THREE.PlaneGeometry(5, 1)
       .translate(0.5, 0.5, -0)
       .scale(0.5, 0.5, 1)
+
+    geometry.setAttribute(
+      'random',
+      new THREE.BufferAttribute(
+        new Float32Array(
+          _.range(geometry.attributes.position.count).map(() =>
+            Math.floor(Math.random() * 5)
+          )
+        ),
+        1
+      )
+    )
     return geometry
   }, [])
 
@@ -103,69 +112,75 @@ function Scene() {
 
   const time = useRef<number>(0)
 
-  const { texture, p } = useMemoCleanup(
-    () => {
-      const canvas = document.createElement('canvas') as HTMLCanvasElement
-      const SQUARE = 1080
-      canvas.width = SQUARE * 5
-      canvas.height = SQUARE
-      // document.body.insertAdjacentElement('afterbegin', canvas)
-      const p = new p5((p: p5) => {
-        p.setup = () => {
-          // @ts-expect-error
-          p.createCanvas(SQUARE * 5, SQUARE, p.WEBGL2, canvas)
-          p.noFill()
-          p.stroke('white')
-          p.colorMode('hsl', 1)
-        }
-
-        const points = _.range(5).flatMap(i => {
-          const points: [number, number][] = _.sortBy(
-            [
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)]
-            ],
-            x => x[0] + x[1]
-          )
-          return points
-        })
-
-        p.draw = () => {
-          p.translate(p.height / 2, p.height / 2)
-          p.scale(p.height / 2, p.height / 2)
-          p.strokeWeight(0.01)
-
-          const t = time.current
-          p.clear()
-
-          const curve = new THREE.SplineCurve(
-            points.map(([x, y]) => new THREE.Vector2(x, y))
-          )
-          const lines = curve.getPoints(p.width)
-
-          for (let i = 0; i < t * lines.length; i++) {
-            if (i % (lines.length / 5) < 200) continue
-            p.point(lines[i].x, lines[i].y)
+  const generateTexture = () => {
+    const { texture, p } = useMemoCleanup(
+      () => {
+        const canvas = document.createElement('canvas') as HTMLCanvasElement
+        const SQUARE = 1080
+        canvas.width = SQUARE * 5
+        canvas.height = SQUARE
+        // document.body.insertAdjacentElement('afterbegin', canvas)
+        const p = new p5((p: p5) => {
+          p.setup = () => {
+            // @ts-expect-error
+            p.createCanvas(SQUARE * 5, SQUARE, p.WEBGL2, canvas)
+            p.noFill()
+            p.stroke('white')
+            p.colorMode('hsl', 1)
           }
 
-          texture.needsUpdate = true
-        }
-      })
+          const points = _.range(5).flatMap(i => {
+            const points: [number, number][] = _.sortBy(
+              [
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)]
+              ],
+              x => x[0] + x[1]
+            )
+            return points
+          })
 
-      const texture = new THREE.CanvasTexture(canvas)
-      return { texture, p, canvas }
-    },
-    ({ p, texture, canvas }) => {
-      canvas.remove()
-      // texture.dispose()
-      p.remove()
-    },
-    []
-  )
+          p.draw = () => {
+            p.translate(p.height / 2, p.height / 2)
+            p.scale(p.height / 2, p.height / 2)
+            p.strokeWeight(0.01)
+
+            const t = time.current
+            p.clear()
+            // p.background('white')
+
+            const curve = new THREE.SplineCurve(
+              points.map(([x, y]) => new THREE.Vector2(x, y))
+            )
+            const lines = curve.getPoints(p.width)
+
+            for (let i = 0; i < t * lines.length; i++) {
+              if (i % (lines.length / 5) < 200) continue
+              p.point(lines[i].x, lines[i].y)
+            }
+
+            texture.needsUpdate = true
+          }
+        })
+
+        const texture = new THREE.CanvasTexture(canvas)
+        return { texture, p, canvas }
+      },
+      ({ p, texture, canvas }) => {
+        canvas.remove()
+        texture.dispose()
+        p.remove()
+      },
+      []
+    )
+    return texture
+  }
+
+  const textures = _.range(5).map(() => generateTexture())
 
   const { camera, material, meshes } = useThree(state => {
     state.scene.clear()
@@ -197,7 +212,11 @@ function Scene() {
         resolution: {
           value: new THREE.Vector2(window.innerWidth, window.innerHeight)
         },
-        tex: { value: texture }
+        tex0: { value: textures[0] },
+        tex1: { value: textures[1] },
+        tex2: { value: textures[2] },
+        tex3: { value: textures[3] },
+        tex4: { value: textures[4] }
       }
     })
 
