@@ -13,6 +13,9 @@ void main() {
   vec3 color = vec3(0.0, 0.0, 0.0);
   vec2 pos = gl_FragCoord.xy / resolution;
 
-  // gl_FragColor = vec4((mix(colors[0], colors[1], pos.x) + mix(colors[2], colors[3], pos.y)) / 2.0, 0.7);
-  gl_FragColor = texture2D(tex, vUv);
+  vec4 mask = texture2D(tex, vUv);
+  if(mask.a == 0.0) {
+    discard;
+  }
+  gl_FragColor = vec4((mix(colors[0], colors[1], pos.x) + mix(colors[2], colors[3], pos.y)) / 2.0, mask.a);
 }

@@ -4,12 +4,19 @@ import * as THREE from 'three'
 import vertexShader from './billboard.vert?raw'
 import fragmentShader from './billboard.frag?raw'
 import _ from 'lodash'
-import { rad, scale, useEventListener, useMemoCleanup } from '../util/util'
+import {
+  measureCurvature,
+  rad,
+  scale,
+  useEventListener,
+  useMemoCleanup
+} from '../util/util'
 import invariant from 'tiny-invariant'
 import p5 from 'p5'
 import * as animS from '../util/p5.anims'
 import { useSpring, easings } from '@react-spring/web'
 import * as ease from 'd3-ease'
+import { Num } from 'pts'
 
 export default function Billboard() {
   return (
@@ -30,71 +37,110 @@ function Scene() {
   const POINTS = 50
 
   const geometry = useMemo(() => {
-    const geometry = new THREE.PlaneGeometry(1, 1)
+    const geometry = new THREE.PlaneGeometry(5, 1)
+      .translate(0.5, 0.5, -0)
+      .scale(0.5, 0.5, 1)
     return geometry
   }, [])
 
   const updateLine = (
     mesh: THREE.InstancedMesh,
-    points: [THREE.Vector2, THREE.Vector2]
+    points: [THREE.Vector2, THREE.Vector2],
+    scaling: number
   ) => {
+    const origin = new THREE.Vector3(0.0, -1.1, 0)
+    const correction = origin.clone().multiplyScalar(-1)
     const line = new THREE.QuadraticBezierCurve3(
-      new THREE.Vector3(0.0, -1.0, 0),
-      new THREE.Vector3(...points[0].toArray(), 0),
+      origin.clone().add(correction).multiplyScalar(scaling).sub(correction),
+      new THREE.Vector3(...points[0].toArray(), 0)
+        .add(correction)
+        .multiplyScalar(scaling)
+        .sub(correction),
       new THREE.Vector3(...points[1].toArray(), 0)
+        .add(correction)
+        .multiplyScalar(scaling)
+        .sub(correction)
     )
     const linePoints = line.getSpacedPoints(
       // (line.getLength() / SCALE) * LAYERING
       POINTS
     )
 
+    const { tangents } = line.computeFrenetFrames(linePoints.length)
+
     for (let i = 0; i < linePoints.length; i++) {
-      const rotation = line.getTangentAt(i / linePoints.length)
+      const rotation = tangents[i]
       if (i % 2 === 0) rotation.applyEuler(new THREE.Euler(0, 0, rad(0.5)))
       // rotation.applyEuler(new THREE.Euler(0, 0, rad(0.25))) // perpendicular
+
+      const scaleVal = scale(
+        Math.abs(
+          measureCurvature(
+            new THREE.Vector3(0, 0, 0),
+            new THREE.Vector3(points[0].x, points[0].y, 0),
+            new THREE.Vector3(points[1].x, points[1].y, 0),
+            i / linePoints.length
+          )
+        ),
+        -0.1,
+        1,
+        0.5,
+        4,
+        0.9,
+        false
+      )
 
       mesh.setMatrixAt(
         i,
         new THREE.Matrix4()
           .makeRotationZ(new THREE.Vector3(0, 1, 0).angleTo(rotation))
+          .multiply(new THREE.Matrix4().makeScale(scaleVal, scaleVal, 1))
           .setPosition(linePoints[i])
       )
     }
     mesh.instanceMatrix.needsUpdate = true
   }
 
+  const time = useRef<number>(0)
+
   const { texture, p } = useMemoCleanup(
     () => {
       const canvas = document.createElement('canvas') as HTMLCanvasElement
-      canvas.width = 1080
-      canvas.height = 1080
+      const SQUARE = 1080
+      canvas.width = SQUARE * 5
+      canvas.height = SQUARE
       // document.body.insertAdjacentElement('afterbegin', canvas)
       const p = new p5((p: p5) => {
         p.setup = () => {
           // @ts-expect-error
-          p.createCanvas(1080, 1080, p.WEBGL2, canvas)
+          p.createCanvas(SQUARE * 5, SQUARE, p.WEBGL2, canvas)
           p.noFill()
           p.stroke('white')
-
-          p.background('white')
+          p.colorMode('hsl', 1)
         }
 
+        const points = _.range(5).flatMap(i => {
+          const points: [number, number][] = _.sortBy(
+            [
+              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
+              [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)]
+            ],
+            x => x[0] + x[1]
+          )
+          return points
+        })
+
         p.draw = () => {
-          p.translate(p.width / 2, p.height / 2)
-          p.scale(p.width / 2, p.height / 2)
+          p.translate(p.height / 2, p.height / 2)
+          p.scale(p.height / 2, p.height / 2)
           p.strokeWeight(0.01)
 
-          const t = ease.easeExpOut(((p.millis() / 1000) * 0.3) % 1)
-
+          const t = time.current
           p.clear()
-          const points: [number, number][] = [
-            [-0.51, 0.35],
-            [-0.03, 0.43],
-            [0.55, -0.23],
-            [0.01, -0.72],
-            [-0.77, -0.57],
-            [-0.24, -0.22]
-          ]
 
           const curve = new THREE.SplineCurve(
             points.map(([x, y]) => new THREE.Vector2(x, y))
@@ -102,6 +148,7 @@ function Scene() {
           const lines = curve.getPoints(p.width)
 
           for (let i = 0; i < t * lines.length; i++) {
+            if (i % (lines.length / 5) < 200) continue
             p.point(lines[i].x, lines[i].y)
           }
 
@@ -164,26 +211,36 @@ function Scene() {
   })
 
   useFrame(state => {
-    const t = state.clock.elapsedTime
-    updateLine(meshes[0], [
-      new THREE.Vector2(
-        scale(Math.sin(t * 0.73 + rad(0.33)), -1, 1, 0, 1),
-        scale(Math.cos(t * 0.74 + rad(0.33)), -1, 1, 0, 1)
-      ),
-      new THREE.Vector2(
-        ...scale([Math.sin(t * 0.68), Math.cos(t * 0.73)], -1, 1, 0.5, 1)
-      )
-    ])
-    updateLine(meshes[1], [
-      new THREE.Vector2(
-        scale(Math.sin(t * 0.73 + rad(0.33)), -1, 1, -1, 0),
-        scale(Math.cos(t * 0.74 + rad(0.33)), -1, 1, 0, 1)
-      ),
-      new THREE.Vector2(
-        scale(Math.sin(t * 0.68), -1, 1, -0.5, -1),
-        scale(Math.cos(t * 0.68), -1, 1, 0.5, 1)
-      )
-    ])
+    const t = (state.clock.elapsedTime * 0.3) % 1
+    time.current = t
+    updateLine(
+      meshes[0],
+      [
+        new THREE.Vector2(
+          scale(Math.sin(t * 0.73 + rad(0.33)), -1, 1, 0, 1 * aspectRatio),
+          scale(Math.cos(t * 0.74 + rad(0.33)), -1, 1, 0, 1)
+        ),
+        new THREE.Vector2(
+          scale(Math.sin(t * 0.68), -1, 1, 0.5 * aspectRatio, 1 * aspectRatio),
+          scale(Math.cos(t * 0.73), -1, 1, 0.5, 1)
+        )
+      ],
+      t
+    )
+    updateLine(
+      meshes[1],
+      [
+        new THREE.Vector2(
+          scale(Math.sin(t * 0.73 + rad(0.33)), -1, 1, -1, 0),
+          scale(Math.cos(t * 0.74 + rad(0.33)), -1, 1, 0, 1)
+        ),
+        new THREE.Vector2(
+          scale(Math.sin(t * 0.68), -1, 1, -0.5, -1),
+          scale(Math.cos(t * 0.68), -1, 1, 0.5, 1)
+        )
+      ],
+      t
+    )
   })
 
   const points = useRef<[number, number][]>([])
@@ -213,7 +270,6 @@ function Scene() {
           .join(', ') +
         ']'
       window.navigator.clipboard.writeText(t)
-      console.log(t)
     },
     []
   )

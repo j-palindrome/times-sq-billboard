@@ -1,4 +1,7 @@
+import _ from 'lodash'
 import { useEffect, useMemo, useRef } from 'react'
+import * as THREE from 'three'
+import * as math from 'mathjs'
 
 export const useEventListener = <K extends keyof WindowEventMap>(
   listener: K,
@@ -30,12 +33,16 @@ export const scale = <T extends number | number[]>(
   high: number,
   lowOut: number,
   highOut: number,
-  exp: number = 1
+  exp: number = 1,
+  clamp = true
 ): T => {
   const scaleNumber = (input: number) => {
     if (high === low) return lowOut
     const zTo1 = ((input - low) / (high - low)) ** exp
-    return zTo1 * (highOut - lowOut) + lowOut
+    let final = zTo1 * (highOut - lowOut) + lowOut
+    if (clamp && final > Math.max(lowOut, highOut)) return highOut
+    if (clamp && final < Math.min(lowOut, highOut)) return lowOut
+    return final
   }
   if (input instanceof Array) {
     return input.map(value => scaleNumber(value)) as T
@@ -64,4 +71,41 @@ export const useMemoCleanup = <T>(
   }, deps)
   itemRef.current = item
   return item
+}
+
+export const measureCurvature = (
+  v0: THREE.Vector3,
+  v1: THREE.Vector3,
+  v2: THREE.Vector3,
+  t: number
+) => {
+  const func = v0
+    .multiplyScalar(1 - t)
+    .add(v1.multiplyScalar(t))
+    .multiplyScalar(1 - t)
+    .add(
+      v1
+        .multiplyScalar(1 - t)
+        .add(v2.multiplyScalar(t))
+        .multiplyScalar(t)
+    )
+
+  // from https://math.stackexchange.com/questions/220900/bezier-curvature
+
+  // const firstDerivative = v1
+  //   .sub(v0)
+  //   .multiplyScalar(2 * (1 - t))
+  //   .add(v2.sub(v1).multiplyScalar(2 * t))
+
+  // const secondDerivative = v2
+  //   .sub(v1.multiplyScalar(2).add(v0))
+  //   .multiplyScalar(2)
+
+  return (
+    (math.det(
+      math.matrix([v1.sub(v0).toArray(), v2.sub(v1).toArray(), [0, 0, 1]])
+    ) *
+      4) /
+    (func.length() * 3)
+  )
 }
