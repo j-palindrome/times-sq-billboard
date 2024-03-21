@@ -5,7 +5,9 @@ import vertexShader from './billboard.vert?raw'
 import fragmentShader from './billboard.frag?raw'
 import _ from 'lodash'
 import {
+  initScene,
   measureCurvature,
+  probLog,
   rad,
   scale,
   useEventListener,
@@ -13,7 +15,6 @@ import {
 } from '../util/util'
 import invariant from 'tiny-invariant'
 import p5 from 'p5'
-import * as animS from '../util/p5.anims'
 import { useSpring, easings } from '@react-spring/web'
 import * as ease from 'd3-ease'
 import { Num } from 'pts'
@@ -38,7 +39,7 @@ function Scene() {
 
   const geometry = useMemo(() => {
     const geometry = new THREE.PlaneGeometry(5, 1)
-      .translate(0.5, 0.5, -0)
+      .translate(2.5, 0, 0)
       .scale(0.5, 0.5, 1)
     geometry.setAttribute(
       'random',
@@ -52,10 +53,11 @@ function Scene() {
     geometry.setAttribute(
       'index',
       new THREE.InstancedBufferAttribute(
-        new Int16Array(_.range(POINTS).map(i => i)),
+        new Float32Array(_.range(POINTS).map(i => i / POINTS)),
         1
       )
     )
+
     return geometry
   }, [])
 
@@ -70,6 +72,11 @@ function Scene() {
     scaling: number
   ) => {
     const origin = new THREE.Vector3(0.0, -1.1, 0)
+    const p1 = new THREE.Vector3(points[0].x, points[0].y)
+    const p2 = new THREE.Vector3(points[1].x, points[1].y)
+
+    const curveLeft = origin.x > p2.x ? 1 : -1
+
     const correction = origin.clone().multiplyScalar(-1)
     const line = new THREE.QuadraticBezierCurve3(
       origin.clone().add(correction).multiplyScalar(scaling).sub(correction),
@@ -87,35 +94,25 @@ function Scene() {
       POINTS
     )
 
-    const { tangents } = line.computeFrenetFrames(linePoints.length)
+    const { tangents, normals, binormals } = line.computeFrenetFrames(
+      linePoints.length
+    )
 
+    const curves = linePoints.map((x, i) =>
+      Math.abs(measureCurvature(origin, p1, p2, 1 - i / linePoints.length))
+    )
+    const maxCurve = _.max(curves)!
+    const minCurve = _.min(curves)!
+
+    const basis = new THREE.Vector3(1, 0, 0)
     for (let i = 0; i < linePoints.length; i++) {
-      const rotation = tangents[i].clone()
-      rotation.applyEuler(new THREE.Euler().set(0, 0, randomRotations[i]))
-
-      // rotation.applyEuler(new THREE.Euler(0, 0, rad(0.25))) // perpendicular
-
-      const scaleVal = scale(
-        Math.abs(
-          measureCurvature(
-            new THREE.Vector3(0, 0, 0),
-            new THREE.Vector3(points[0].x, points[0].y, 0),
-            new THREE.Vector3(points[1].x, points[1].y, 0),
-            i / linePoints.length
-          )
-        ),
-        -0.1,
-        1,
-        0.5,
-        4,
-        0.9,
-        false
-      )
+      const rotation = tangents[i].clone().angleTo(basis)
+      const scaleVal = scale(curves[i], minCurve, maxCurve, 0.5, 2)
 
       mesh.setMatrixAt(
         i,
         new THREE.Matrix4()
-          .makeRotationZ(new THREE.Vector3(1, 0, 0).angleTo(rotation))
+          .makeRotationZ(rotation + rad(-0.25 * curveLeft) + rad(0.5 * (i % 2)))
           .multiply(new THREE.Matrix4().makeScale(scaleVal, scaleVal, 1))
           .setPosition(linePoints[i])
       )
@@ -140,6 +137,8 @@ function Scene() {
             p.noFill()
             p.stroke('white')
             p.colorMode('hsl', 1)
+            // p.strokeWeight(10)
+            // p.rect(0, 0, p.width, p.height)
           }
 
           const points = _.range(5).flatMap(i => {
@@ -166,10 +165,10 @@ function Scene() {
             p.strokeWeight(0.01)
 
             const t = time.current
-            if (t > 1 - 0.5 ** 2) {
-              p.stroke('black')
-            } else {
+            if (t < 1 - 0.5 ** 2) {
               p.stroke('white')
+            } else {
+              p.stroke('black')
             }
             if (t < lastT) {
               p.clear()
@@ -183,11 +182,7 @@ function Scene() {
             )
             const lines = curve.getPoints(p.width)
 
-            for (
-              let i = Math.floor(lastIntermediateT * lines.length);
-              i < intermediateT * lines.length;
-              i++
-            ) {
+            for (let i = 0; i < intermediateT * lines.length; i++) {
               if (i % (lines.length / 5) >= 200) p.point(lines[i].x, lines[i].y)
             }
 
@@ -212,17 +207,7 @@ function Scene() {
   const textures = _.range(5).map(x => createTexture())
 
   const { camera, material, meshes } = useThree(state => {
-    state.scene.clear()
-    state.camera = new THREE.OrthographicCamera(
-      -aspectRatio,
-      aspectRatio,
-      1,
-      -1,
-      0,
-      1
-    )
-    state.camera.position.set(0, 0, 0)
-    state.camera.updateMatrixWorld()
+    initScene(state)
 
     const material = new THREE.ShaderMaterial({
       vertexShader: vertexShader,
@@ -262,35 +247,33 @@ function Scene() {
   useFrame(state => {
     time.current = (state.clock.elapsedTime * 0.3) % 1
 
-    const t = time.current ** 0.2
+    const points: [number, number][] = [
+      [0, -1],
+      [0, 0.78],
+      [aspectRatio, 0.75]
+    ]
+
+    const t = time.current
     updateLine(
       meshes[0],
       [
-        new THREE.Vector2(
-          scale(Math.sin(t * 0.73 + rad(0.33)), -1, 1, 0, 1 * aspectRatio),
-          scale(Math.cos(t * 0.74 + rad(0.33)), -1, 1, 0, 1)
-        ),
-        new THREE.Vector2(
-          scale(Math.sin(t * 0.68), -1, 1, 0.5 * aspectRatio, 1 * aspectRatio),
-          scale(Math.cos(t * 0.73), -1, 1, 0.5, 1)
-        )
+        new THREE.Vector2(points[1][0] * -1, points[1][1]),
+        new THREE.Vector2(points[2][0] * -1, points[2][1])
       ],
-      t
+      1
     )
     updateLine(
       meshes[1],
       [
-        new THREE.Vector2(
-          scale(Math.sin(t * 0.73 + rad(0.33)), -1, 1, -1, 0),
-          scale(Math.cos(t * 0.74 + rad(0.33)), -1, 1, 0, 1)
-        ),
-        new THREE.Vector2(
-          scale(Math.sin(t * 0.68), -1, 1, -0.5, -1),
-          scale(Math.cos(t * 0.68), -1, 1, 0.5, 1)
-        )
+        new THREE.Vector2(points[1][0], points[1][1]),
+        new THREE.Vector2(points[2][0], points[2][1])
       ],
-      t
+      1
     )
+
+    material.uniforms.t.value = t
+
+    material.uniformsNeedUpdate = true
   })
 
   const points = useRef<[number, number][]>([])
@@ -320,6 +303,7 @@ function Scene() {
           .join(', ') +
         ']'
       window.navigator.clipboard.writeText(t)
+      console.log(t)
     },
     []
   )
