@@ -146,6 +146,15 @@ function Scene() {
         }
       )
     )
+    geometry.setAttribute(
+      'bezierPoints',
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(
+          _.range(POINTS).flatMap(() => _.range(16).map(() => Math.random()))
+        ),
+        16
+      )
+    )
 
     return geometry
   }, [])
@@ -170,7 +179,6 @@ function Scene() {
 
       const correction = origin.clone().multiplyScalar(-1)
       const line = new THREE.QuadraticBezierCurve3(origin, p1, p2)
-      console.log(line)
 
       const linePoints = line.getSpacedPoints(
         // (line.getLength() / SCALE) * LAYERING
