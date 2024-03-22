@@ -17,8 +17,8 @@ import invariant from 'tiny-invariant'
 import p5 from 'p5'
 import { useSpring, easings } from '@react-spring/web'
 import * as ease from 'd3-ease'
-import { Num } from 'pts'
-import { create } from '../util/util'
+import { Group, Num, Pt } from 'pts'
+import { create, toVector3 } from '../util/util'
 
 export default function Billboard() {
   return (
@@ -33,10 +33,88 @@ export default function Billboard() {
 function Scene() {
   const SCALE = 0.2
   const LAYERING = 1.5
+  const POINTS_PER_CURVE = 20
+  const MAX = 4
+  const CURVE = 0.1
+  const startingShape = new Group(new Pt(0, -1), new Pt(0, 0), new Pt(1, 0))
+  startingShape.scale([1, 0.5])
+  const SPEED = 0.25
+  const ROTATION = -0.25
 
   const aspectRatio = window.innerWidth / window.innerHeight
 
-  const POINTS = 50
+  const branches = useMemo(() => {
+    const branch: [THREE.Vector3, THREE.Vector3, THREE.Vector3][] = []
+
+    const curveGeneration = (
+      v1: THREE.Vector3,
+      v2: THREE.Vector3,
+      v3: THREE.Vector3,
+      progress: number
+    ) => {
+      if (progress > MAX) return
+      const curve = new THREE.QuadraticBezierCurve3(v1, v2, v3)
+      const shape = new Group(
+        new Pt(v1.x, v1.y),
+        new Pt(v2.x, v2.y),
+        new Pt(v3.x, v3.y)
+      )
+      const midpoint = curve.getPoint(0.5)
+      const newCurve = shape
+        .scale(1 / (progress * 0.7))
+        .moveTo(new Pt(midpoint.x, midpoint.y))
+
+      const newCurve2 = newCurve.clone().rotate2D(rad(-CURVE))
+      newCurve.rotate2D(rad(CURVE))
+      branch.push([v1, v2, v3])
+      curveGeneration(
+        new THREE.Vector3(newCurve[0].x, newCurve[0].y),
+        new THREE.Vector3(newCurve[1].x, newCurve[1].y),
+        new THREE.Vector3(newCurve[2].x, newCurve[2].y),
+        progress + 1
+      )
+      curveGeneration(
+        new THREE.Vector3(newCurve2[0].x, newCurve2[0].y),
+        new THREE.Vector3(newCurve2[1].x, newCurve2[1].y),
+        new THREE.Vector3(newCurve2[2].x, newCurve2[2].y),
+        progress + 1
+      )
+    }
+
+    curveGeneration(
+      ...(toVector3(...startingShape) as [
+        THREE.Vector3,
+        THREE.Vector3,
+        THREE.Vector3
+      ]),
+      1
+    )
+    // startingShape.moveTo(0, 0)
+    // curveGeneration(
+    //   ...(toVector3(...startingShape) as [
+    //     THREE.Vector3,
+    //     THREE.Vector3,
+    //     THREE.Vector3
+    //   ]),
+    //   1
+    // )
+    // startingShape.moveTo(0, 0.5)
+    // curveGeneration(
+    //   ...(toVector3(...startingShape) as [
+    //     THREE.Vector3,
+    //     THREE.Vector3,
+    //     THREE.Vector3
+    //   ]),
+    //   1
+    // )
+
+    const branch2 = branch.map(x =>
+      x.map(x => x.clone().multiply(new THREE.Vector3(-1, 1, 1)))
+    )
+    return [branch, branch2]
+  }, [])
+
+  const POINTS = branches[0].length * POINTS_PER_CURVE
 
   const geometry = useMemo(() => {
     const geometry = new THREE.PlaneGeometry(1, 1 / 5).translate(0.5, 1 / 10, 0)
@@ -79,49 +157,53 @@ function Scene() {
 
   const updateLine = (
     mesh: THREE.InstancedMesh,
-    points: [THREE.Vector3, THREE.Vector3, THREE.Vector3],
-    scaling: number
+    scaling: number,
+    mode: number
   ) => {
-    const origin = points[0]
-    const p1 = points[1]
-    const p2 = points[2]
+    let j = 0
+    for (let points of branches[mode]) {
+      const origin = points[0]
+      const p1 = points[1]
+      const p2 = points[2]
 
-    const curveLeft = origin.x > p2.x ? 1 : -1
+      const curveLeft = origin.x > p2.x ? 1 : -1
 
-    const correction = origin.clone().multiplyScalar(-1)
-    const line = new THREE.QuadraticBezierCurve3(
-      origin.clone().add(correction).multiplyScalar(scaling).sub(correction),
-      p1.clone().add(correction).multiplyScalar(scaling).sub(correction),
-      p2.clone().add(correction).multiplyScalar(scaling).sub(correction)
-    )
-    const linePoints = line.getSpacedPoints(
-      // (line.getLength() / SCALE) * LAYERING
-      POINTS
-    )
+      const correction = origin.clone().multiplyScalar(-1)
+      const line = new THREE.QuadraticBezierCurve3(origin, p1, p2)
+      console.log(line)
 
-    const { tangents, normals, binormals } = line.computeFrenetFrames(
-      linePoints.length
-    )
-
-    const curves = linePoints.map((x, i) =>
-      Math.abs(measureCurvature(origin, p1, p2, 1 - i / linePoints.length))
-    )
-    const maxCurve = _.max(curves)!
-    const minCurve = _.min(curves)!
-
-    const basis = new THREE.Vector3(1, 0, 0)
-    for (let i = 0; i < linePoints.length; i++) {
-      const rotation = tangents[i].clone().angleTo(basis)
-      const scaleVal = scale(curves[i], minCurve, maxCurve, 0.2, 1)
-
-      mesh.setMatrixAt(
-        i,
-        new THREE.Matrix4()
-          .makeRotationZ(rotation + rad(-0.25 * curveLeft))
-          .multiply(new THREE.Matrix4().makeScale(scaleVal, scaleVal, 1))
-          .setPosition(linePoints[i])
+      const linePoints = line.getSpacedPoints(
+        // (line.getLength() / SCALE) * LAYERING
+        POINTS_PER_CURVE
       )
+
+      const { tangents, normals, binormals } = line.computeFrenetFrames(
+        linePoints.length
+      )
+
+      const curves = linePoints.map((x, i) =>
+        Math.abs(measureCurvature(origin, p1, p2, 1 - i / linePoints.length))
+      )
+      const maxCurve = _.max(curves)!
+      const minCurve = _.min(curves)!
+
+      const basis = new THREE.Vector3(1, 0, 0)
+      for (let i = 0; i < linePoints.length; i++) {
+        const rotation = tangents[i].clone().angleTo(basis)
+        const scaleVal = scale(curves[i], minCurve, maxCurve, 0.2, 1)
+        // * (1 - j / POINTS)
+
+        mesh.setMatrixAt(
+          j,
+          new THREE.Matrix4()
+            .makeRotationZ(rotation + rad(ROTATION * curveLeft))
+            .multiply(new THREE.Matrix4().makeScale(scaleVal, scaleVal, 1))
+            .setPosition(linePoints[i])
+        )
+        j++
+      }
     }
+
     mesh.instanceMatrix.needsUpdate = true
   }
 
@@ -157,12 +239,13 @@ function Scene() {
             p.noFill()
             p.stroke('white')
             p.colorMode('hsl', 1)
+            // p.strokeWeight(100)
+            // p.rect(0, 0, p.width, p.height)
 
             p.translate(p.height / 2, p.height / 2)
             p.scale(p.height / 2, p.height / 2)
             p.strokeWeight(0.01)
 
-            // p.rect(0, 0, p.width, p.height)
             const curve = new THREE.SplineCurve(
               points.map(([x, y]) => new THREE.Vector2(x, y))
             )
@@ -222,42 +305,22 @@ function Scene() {
     )
 
     state.scene.add(...meshes)
+    // state.scene.add(meshes[0])
+
+    updateLine(meshes[0], 1, 0)
+    updateLine(meshes[1], 1, 1)
 
     return { camera: state.camera, material, meshes }
   })
 
   useFrame(state => {
     time.current = (state.clock.elapsedTime * 0.3) % 1
-
-    const points: [number, number][] = [
-      [0.2, -1],
-      [0.5, 0],
-      [aspectRatio, 0]
-    ]
-
     const t = time.current
-    updateLine(
-      meshes[0],
-      [
-        new THREE.Vector3(points[0][0] * -1, points[0][1]),
-        new THREE.Vector3(points[1][0] * -1, points[1][1]),
-        new THREE.Vector3(points[2][0] * -1, points[2][1])
-      ],
-      1
-    )
-    updateLine(
-      meshes[1],
-      [
-        new THREE.Vector3(points[0][0], points[0][1]),
-        new THREE.Vector3(points[1][0], points[1][1]),
-        new THREE.Vector3(points[2][0], points[2][1])
-      ],
-      1
-    )
-
+    const map = t ** SPEED
     material.uniforms.t.value = t
-
     material.uniformsNeedUpdate = true
+    material.needsUpdate = true
+    meshes.forEach(mesh => mesh.scale.set(map * 0.25 + 0.75, 1, 1))
   })
 
   const points = useRef<[number, number][]>([])

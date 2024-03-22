@@ -18,10 +18,15 @@ flat varying int vTexIndex;
 
 const vec2 coordinates[4] = vec2[4](vec2(0.0, 1.0), vec2(1.0, 1.0), vec2(1.0, 0.0), vec2(0.0, 0.0));
 
+vec2 bezierVertex(vec2 point, float dimension, float index, float t) {
+  return index * t * pow((1.0 - t), dimension - index) * point }
+
 void main() {
   vec2 pos = gl_FragCoord.xy / resolution;
 
-  float scanRight = pow(t, vIndex * 2.0 * (0.9 + vRandom * 0.2));
+  float scanRight = pow(t, 0.5 + (vIndex * 0.5)) * 0.7;
+  // float scanRight = pow(t, mod(vIndex * 10.0, 1.0) * 2.0 * (0.9 + vRandom * 0.2));
+  // float scanRight = 1.0;
   if(vUv.x > scanRight)
     discard;
 
