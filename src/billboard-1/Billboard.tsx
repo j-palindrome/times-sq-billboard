@@ -118,7 +118,13 @@ function Scene() {
   const POINTS = branches[0].length * POINTS_PER_CURVE
 
   const geometry = useMemo(() => {
-    const geometry = new THREE.PlaneGeometry(1, 1 / 5).translate(0.5, 1 / 10, 0)
+    const geometry = create(new THREE.BufferGeometry(), e => {
+      e.setFromPoints(
+        _.range(BEZIER_POINTS).flatMap(x =>
+          _.range(3).flatMap(x => new THREE.Vector3())
+        )
+      )
+    })
     geometry.setAttribute(
       'random',
       new THREE.InstancedBufferAttribute(
@@ -147,15 +153,15 @@ function Scene() {
         }
       )
     )
-    // geometry.setAttribute(
-    //   'bezierPoints',
-    //   new THREE.InstancedBufferAttribute(
-    //     new Float32Array(
-    //       _.range(POINTS).flatMap(() => _.range(16).map(() => Math.random()))
-    //     ),
-    //     16
-    //   )
-    // )
+    geometry.setAttribute(
+      'splinePoints',
+      new THREE.InstancedBufferAttribute(
+        new Float32Array(
+          _.range(POINTS).flatMap(() => _.range(16).map(() => Math.random()))
+        ),
+        16
+      )
+    )
 
     return geometry
   }, [])
@@ -300,7 +306,7 @@ function Scene() {
     // })
 
     const meshes = _.range(2).map(
-      () => new THREE.InstancedMesh(geometry, material, POINTS)
+      () => new THREE.Line(geometry, material, POINTS)
     )
 
     state.scene.add(...meshes)
