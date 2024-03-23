@@ -2,14 +2,12 @@ uniform vec2 cursor;
 attribute float random;
 attribute float index;
 attribute int texIndex;
-attribute mat4 bezierPoints;
 
 uniform float t;
 flat varying float vIndex;
 flat varying int vTexIndex;
 varying float vRandom;
 varying vec2 vUv;
-flat varying vec2 vBezierPoints[8];
 
 void main() {
 
@@ -23,5 +21,4 @@ void main() {
   vRandom = random;
   vIndex = index;
   vTexIndex = texIndex;
-  vBezierPoints = vec2[8](bezierPoints[0].xy, bezierPoints[0].zw, bezierPoints[1].xy, bezierPoints[1].zw, bezierPoints[2].zy, bezierPoints[2].zw, bezierPoints[3].xy, bezierPoints[3].zw);
 }

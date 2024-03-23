@@ -231,7 +231,7 @@ function Scene() {
               [(Num.randomRange(0, 1) + i) / 5, Num.randomRange(0, 1)],
               [(Num.randomRange(0, 1) + i) / 5, Num.randomRange(0, 1)]
             ],
-            x => x[0]
+            x => x[0] + x[1]
           )
           return points
         })

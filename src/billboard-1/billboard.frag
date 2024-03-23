@@ -13,7 +13,6 @@ varying vec2 vUv;
 varying float vRandom;
 flat varying float vIndex;
 flat varying int vTexIndex;
-flat varying vec2 vBezierPoints[8];
 
 #define PHI 1.4142135
 #define PI 3.1415926535897
@@ -72,7 +71,7 @@ void main() {
   // mappedT = max(0.0, min(1.0, mappedT));
   // mappedT = t;
 
-  for(float i = progress * 0.76; i < progress; i += 1.0 / bezierPoints) {
+  for(float i = 0.0; i < t; i += RADIUS / 2.0) {
     vec4 bezierPoint;
     switch(vTexIndex) {
       case 0:
