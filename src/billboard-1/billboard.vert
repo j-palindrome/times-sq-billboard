@@ -17,7 +17,7 @@ void main() {
   // float power = 1.0;
   // vec4 pos = vec4(position.xyz, 1.0) * vec4(power, power, 1.0, 1.0);
   // gl_Position = pos;
-  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position.x * 0.2, position.yz, 1.0);
+  gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
 
   vUv = uv;
   vRandom = random;

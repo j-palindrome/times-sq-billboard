@@ -40,6 +40,7 @@ function Scene() {
   startingShape.scale([1, 0.5])
   const SPEED = 0.25
   const ROTATION = -0.25
+  const BEZIER_POINTS = 1024
 
   const aspectRatio = window.innerWidth / window.innerHeight
 
@@ -146,15 +147,15 @@ function Scene() {
         }
       )
     )
-    geometry.setAttribute(
-      'bezierPoints',
-      new THREE.InstancedBufferAttribute(
-        new Float32Array(
-          _.range(POINTS).flatMap(() => _.range(16).map(() => Math.random()))
-        ),
-        16
-      )
-    )
+    // geometry.setAttribute(
+    //   'bezierPoints',
+    //   new THREE.InstancedBufferAttribute(
+    //     new Float32Array(
+    //       _.range(POINTS).flatMap(() => _.range(16).map(() => Math.random()))
+    //     ),
+    //     16
+    //   )
+    // )
 
     return geometry
   }, [])
@@ -218,66 +219,52 @@ function Scene() {
   const time = useRef<number>(0)
 
   const createTexture = () => {
-    const { texture, p } = useMemoCleanup(
+    const { texture } = useMemoCleanup(
       () => {
-        const canvas = document.createElement('canvas') as HTMLCanvasElement
-        const SQUARE = 1080
-        canvas.width = SQUARE * 5
-        canvas.height = SQUARE
-        // document.body.insertAdjacentElement('afterbegin', canvas)
-        const p = new p5((p: p5) => {
-          const points = _.range(5).flatMap(i => {
-            const points: [number, number][] = _.sortBy(
-              [
-                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)],
-                [Num.randomRange(0, 1) + i, Num.randomRange(0, 1)]
-              ],
-              x => x[0] + x[1]
-            )
-            return points
-          })
-
-          p.setup = () => {
-            // @ts-expect-error
-            p.createCanvas(SQUARE * 5, SQUARE, p.WEBGL2, canvas)
-            p.noFill()
-            p.stroke('white')
-            p.colorMode('hsl', 1)
-            // p.strokeWeight(100)
-            // p.rect(0, 0, p.width, p.height)
-
-            p.translate(p.height / 2, p.height / 2)
-            p.scale(p.height / 2, p.height / 2)
-            p.strokeWeight(0.01)
-
-            const curve = new THREE.SplineCurve(
-              points.map(([x, y]) => new THREE.Vector2(x, y))
-            )
-            const lines = curve.getPoints(p.width)
-
-            for (let i = 0; i < lines.length; i++) {
-              if (i % (lines.length / 5) >= 200) p.point(lines[i].x, lines[i].y)
-            }
-          }
+        const points = _.range(5).flatMap(i => {
+          const points: [number, number][] = _.sortBy(
+            [
+              [(Num.randomRange(0, 1) + i) / 5, Num.randomRange(0, 1)],
+              [(Num.randomRange(0, 1) + i) / 5, Num.randomRange(0, 1)],
+              [(Num.randomRange(0, 1) + i) / 5, Num.randomRange(0, 1)],
+              [(Num.randomRange(0, 1) + i) / 5, Num.randomRange(0, 1)],
+              [(Num.randomRange(0, 1) + i) / 5, Num.randomRange(0, 1)],
+              [(Num.randomRange(0, 1) + i) / 5, Num.randomRange(0, 1)]
+            ],
+            x => x[0]
+          )
+          return points
         })
 
-        const texture = new THREE.CanvasTexture(canvas)
-        return { texture, p, canvas }
+        const curve = new THREE.SplineCurve(
+          points.map(([x, y]) => new THREE.Vector2(x, y))
+        )
+        const lines = curve.getSpacedPoints(BEZIER_POINTS - 1)
+
+        const linesArray = lines.flatMap(x =>
+          x
+            .toArray()
+            .map(x => Math.floor(x * 255))
+            .concat([1 * 255, 1 * 255])
+        )
+        const texture = new THREE.DataTexture(
+          new Uint8Array(linesArray),
+          lines.length,
+          1
+        )
+        texture.needsUpdate = true
+
+        return { texture }
       },
-      ({ p, texture, canvas }) => {
-        canvas.remove()
+      ({ texture }) => {
         // texture.dispose()
-        p.remove()
       },
       []
     )
     return texture
   }
   const textures = _.range(5).map(x => createTexture())
+  console.log(textures.map(x => x.image))
 
   const { camera, material, meshes } = useThree(state => {
     initScene(state)
@@ -304,9 +291,13 @@ function Scene() {
         tex2: { value: textures[2] },
         tex3: { value: textures[3] },
         tex4: { value: textures[4] },
-        points: { value: POINTS }
+        points: { value: POINTS },
+        bezierPoints: { value: BEZIER_POINTS }
       }
     })
+    // const material = new THREE.MeshBasicMaterial({
+    //   map: textures[0]
+    // })
 
     const meshes = _.range(2).map(
       () => new THREE.InstancedMesh(geometry, material, POINTS)
@@ -328,7 +319,7 @@ function Scene() {
     material.uniforms.t.value = t
     material.uniformsNeedUpdate = true
     material.needsUpdate = true
-    meshes.forEach(mesh => mesh.scale.set(map * 0.25 + 0.75, 1, 1))
+    // meshes.forEach(mesh => mesh.scale.set(map * 0.25 + 0.75, 1, 1))
   })
 
   const points = useRef<[number, number][]>([])
