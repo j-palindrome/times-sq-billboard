@@ -1,10 +1,14 @@
 uniform vec2 cursor;
+uniform float t;
+uniform mat4 modelViewMatrix;
+uniform mat4 projectionMatrix;
+
+attribute vec2 uv;
 attribute float random;
 attribute float index;
 attribute int texIndex;
 attribute mat4 splinePoints;
 
-uniform float t;
 flat varying float vIndex;
 flat varying int vTexIndex;
 varying float vRandom;

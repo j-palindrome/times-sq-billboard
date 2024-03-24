@@ -1,5 +1,5 @@
 {
-  "name": "react",
+  "name": "billboard",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -25,6 +25,7 @@
     "lindenmayer": "^1.5.4",
     "lodash": "^4.17.21",
     "mathjs": "^12.4.1",
+    "mp4-muxer": "^4.0.1",
     "mqtt": "^5.5.0",
     "p5": "^1.9.2",
     "postcss": "^8.4.36",

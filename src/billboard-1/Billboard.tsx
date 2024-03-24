@@ -9,6 +9,7 @@ import {
   measureCurvature,
   probLog,
   rad,
+  randomList,
   scale,
   useEventListener,
   useMemoCleanup
@@ -118,10 +119,11 @@ function Scene() {
   const POINTS = branches[0].length * POINTS_PER_CURVE
 
   const geometry = useMemo(() => {
-    const geometry = create(new THREE.BufferGeometry(), e => {
+    const geometry = create(new THREE.InstancedBufferGeometry(), e => {
+      e.instanceCount = POINTS
       e.setFromPoints(
         _.range(BEZIER_POINTS).flatMap(x =>
-          _.range(3).flatMap(x => new THREE.Vector3())
+          _.range(3).flatMap(x => new THREE.Vector3(...randomList(2), 0.0))
         )
       )
     })
@@ -275,7 +277,7 @@ function Scene() {
   const { camera, material, meshes } = useThree(state => {
     initScene(state)
 
-    const material = new THREE.ShaderMaterial({
+    const material = new THREE.RawShaderMaterial({
       vertexShader: vertexShader,
       fragmentShader: fragmentShader,
       transparent: true,
@@ -305,15 +307,19 @@ function Scene() {
     //   map: textures[0]
     // })
 
-    const meshes = _.range(2).map(
-      () => new THREE.Line(geometry, material, POINTS)
-    )
+    // const meshes = _.range(2).map(() => new THREE.Line(geometry, material))
 
-    state.scene.add(...meshes)
+    // state.scene.add(...meshes)
     // state.scene.add(meshes[0])
 
-    updateLine(meshes[0], 1, 0)
-    updateLine(meshes[1], 1, 1)
+    // updateLine(meshes[0], 1, 0)
+    // updateLine(meshes[1], 1, 1)
+    const meshes = [
+      new THREE.Line(
+        geometry,
+        new THREE.LineBasicMaterial({ color: 'white', linewidth: 100 })
+      )
+    ]
 
     return { camera: state.camera, material, meshes }
   })
