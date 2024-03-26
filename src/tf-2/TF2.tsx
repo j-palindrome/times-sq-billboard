@@ -4,6 +4,9 @@ import invariant from 'tiny-invariant'
 import * as twgl from 'twgl.js'
 import fragmentShader from './f.frag'
 import vertexShader from './v.vert'
+import { el } from '@elemaudio/core'
+import WebRenderer from '@elemaudio/web-renderer'
+import p5 from 'p5'
 
 const c = {
   POINTS: 100,
@@ -12,17 +15,10 @@ const c = {
 
 export default function TF2() {
   const frame = useRef<HTMLCanvasElement>(null!)
-  const [{ gl, ctx }, setContexts] = useState<
-    | {
-        gl: WebGL2RenderingContext
-        ctx: AudioContext
-      }
-    | { gl: null; ctx: null }
-  >({ gl: null, ctx: null })
 
   return (
     <>
-      {!gl && (
+      {
         <div className='fixed z-100 h-screen w-screen top-0 left-0 bg-black text-white flex items-center justify-center'>
           <button
             onClick={() => {
@@ -34,24 +30,44 @@ export default function TF2() {
             start
           </button>
         </div>
-      )}
+      }
       <canvas ref={frame} className='h-screen w-screen' />
-      {gl && ctx && <SceneMemo gl={gl} ctx={ctx} />}
+      <SceneMemo />
     </>
   )
 }
 
 const SceneMemo = memo(Scene, () => true)
-function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
+function Scene() {
   const [animating, setAnimating] = useState(false)
-
   const props = useRef<any>({})
-  const initialized = useRef(false)
 
   useEffect(() => {
-    if (initialized.current) return
-    initialized.current = true
-    console.log('recomputing initialization')
+    if (animating) return
+    const p = new p5((p: p5) => {
+      const gl = p.drawingContext
+      p.setup = () => {}
+
+      p.draw = () => {}
+    })
+
+    const ctx = new AudioContext()
+    const core = new WebRenderer()
+    core.initialize(ctx, {}).then(node => node.connect(ctx.destination))
+
+    core.on('load', () => setAnimating(true))
+    core.on('load', () =>
+      core.render(
+        el.mul(el.cycle(909), el.mul(el.cycle(30), el.cycle(1 / 20))),
+        el.mul(
+          el.cycle(30),
+          el.mul(
+            el.cycle(430),
+            el.mul(el.noise(), el.add(el.mul(el.square(el.cycle(1)), 0.3), 0.8))
+          )
+        )
+      )
+    )
 
     twgl.resizeCanvasToDisplaySize(gl.canvas as HTMLCanvasElement)
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
@@ -113,17 +129,17 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
 
     let setNdx = 0
 
-    setAnimating(true)
-
     props.current = {
       ...props.current,
       setNdx,
       tfBufferInfo1,
-      tfBufferInfo2
+      tfBufferInfo2,
+      core
     }
   }, [])
 
   useEffect(() => {
+    if (!animating) return
     let array = new Uint8Array(gl.canvas.width * gl.canvas.height * 4)
 
     const tex = twgl.createTexture(gl, {
@@ -135,9 +151,10 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
     })
 
     props.current = { ...props.current, tex, array }
-  }, [gl.canvas.width, gl.canvas.height])
+  }, [animating, gl.canvas.width, gl.canvas.height])
 
   useEffect(() => {
+    if (!animating) return
     const { tfBufferInfo1, tfBufferInfo2 } = props.current
 
     console.log('recreating transform feedback shaders')
@@ -183,7 +200,7 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
     ]
 
     props.current = { ...props.current, sets, feedbackProgramInfo }
-  }, [gl, ctx, vertexShader, fragmentShader])
+  }, [animating, gl, ctx, vertexShader, fragmentShader])
 
   useEffect(() => {
     console.log('reconstructing animation')
