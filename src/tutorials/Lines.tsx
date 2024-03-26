@@ -25,6 +25,7 @@ import {
   Vector2,
   Vector3
 } from 'three'
+
 import { EffectComposer } from 'three/examples/jsm/Addons.js'
 import _ from 'lodash'
 import { Num } from 'pts'
@@ -33,7 +34,6 @@ import fragmentShader from './f.frag?raw'
 import * as easings from 'd3-ease'
 import { useMemo, useRef } from 'react'
 import { ArrayBufferTarget, Muxer } from 'mp4-muxer'
-import { useInterval } from '../util/util'
 
 const c = {
   INSTANCES: window.innerWidth,
@@ -240,8 +240,8 @@ function Scene() {
         target: new ArrayBufferTarget(),
         video: {
           codec: 'avc',
-          width: state.gl.domElement.width,
-          height: state.gl.domElement.height
+          width: 1280,
+          height: 720
         },
         fastStart: 'in-memory'
       })
@@ -291,21 +291,21 @@ function Scene() {
     mat.uniforms.t.value = t
     mat.uniformsNeedUpdate = true
 
-    // frameCounter.current++
+    frameCounter.current++
 
-    // const frame = new VideoFrame(state.gl.domElement, {
-    //   timestamp: frameCounter.current * (1 / 60)
-    // })
+    const frame = new VideoFrame(state.gl.domElement, {
+      timestamp: frameCounter.current * (1 / 30)
+    })
 
-    // const keyFrame = frameCounter.current % 150 == 0
-    // encoder.encode(frame, { keyFrame })
-    // frame.close()
+    const keyFrame = frameCounter.current % 150 == 0
+    encoder.encode(frame, { keyFrame })
+    frame.close()
 
-    // if (frameCounter.current >= 3 * 60 && !savedVideo.current) {
-    //   savedVideo.current = true
-    //   saveVideo()
-    //   return
-    // }
+    if (frameCounter.current >= 3 * 30 && !savedVideo.current) {
+      savedVideo.current = true
+      saveVideo()
+      return
+    }
 
     // meshes[0].scale.set(-1.5, easing * 1.5, 1)
     // meshes[1].scale.set(1.5, easing * 1.5, 1)
@@ -317,8 +317,6 @@ function Scene() {
     //   new Color().setHSL((0.7 + t) % 1.0, 0.9, 0.8)
     // ]
   })
-
-  // useInterval(() => invalidate(), 150)
 
   return <></>
 }
