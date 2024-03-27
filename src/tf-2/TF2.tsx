@@ -7,6 +7,9 @@ import vertexShader from './v.vert'
 import { el } from '@elemaudio/core'
 import WebRenderer from '@elemaudio/web-renderer'
 import p5 from 'p5'
+import { probLog, useEventListener, measureCurvature } from '../util/util'
+import * as math from 'mathjs'
+import { useNormalize } from '../util/animation'
 
 const c = {
   POINTS: 100,
@@ -15,10 +18,17 @@ const c = {
 
 export default function TF2() {
   const frame = useRef<HTMLCanvasElement>(null!)
+  const [{ gl, ctx }, setContexts] = useState<
+    | {
+        gl: WebGL2RenderingContext
+        ctx: AudioContext
+      }
+    | { gl: null; ctx: null }
+  >({ gl: null, ctx: null })
 
   return (
     <>
-      {
+      {!gl && (
         <div className='fixed z-100 h-screen w-screen top-0 left-0 bg-black text-white flex items-center justify-center'>
           <button
             onClick={() => {
@@ -30,44 +40,57 @@ export default function TF2() {
             start
           </button>
         </div>
-      }
+      )}
       <canvas ref={frame} className='h-screen w-screen' />
-      <SceneMemo />
+      {gl && ctx && <SceneMemo gl={gl} ctx={ctx} />}
     </>
   )
 }
-
+type propsType = {
+  setNdx: number
+  tfBufferInfo1: twgl.BufferInfo
+  tfBufferInfo2: twgl.BufferInfo
+  core: WebRenderer
+  tex: WebGLTexture
+  array: Uint8Array
+  sets: {
+    feedback: WebGLTransformFeedback
+    tfVAInfo: twgl.VertexArrayInfo
+  }[]
+  feedbackProgramInfo: twgl.ProgramInfo
+  soundReading: {
+    speeds: Float32Array
+    previousSpeeds: Float32Array
+    headings: Float32Array
+  }
+}
 const SceneMemo = memo(Scene, () => true)
-function Scene() {
+function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
   const [animating, setAnimating] = useState(false)
-  const props = useRef<any>({})
+  const props = useRef<propsType>({} as any)
 
-  useEffect(() => {
-    if (animating) return
-    const p = new p5((p: p5) => {
-      const gl = p.drawingContext
-      p.setup = () => {}
-
-      p.draw = () => {}
-    })
-
-    const ctx = new AudioContext()
+  const core = useMemo(() => {
     const core = new WebRenderer()
     core.initialize(ctx, {}).then(node => node.connect(ctx.destination))
 
     core.on('load', () => setAnimating(true))
-    core.on('load', () =>
-      core.render(
-        el.mul(el.cycle(909), el.mul(el.cycle(30), el.cycle(1 / 20))),
-        el.mul(
-          el.cycle(30),
-          el.mul(
-            el.cycle(430),
-            el.mul(el.noise(), el.add(el.mul(el.square(el.cycle(1)), 0.3), 0.8))
-          )
-        )
-      )
-    )
+    // core.on('load', () => {
+    //   // core.render(
+    //   //   el.mul(el.cycle(909), el.mul(el.cycle(30), el.cycle(1 / 20))),
+    //   //   el.mul(
+    //   //     el.cycle(30),
+    //   //     el.mul(
+    //   //       el.cycle(430),
+    //   //       el.mul(el.noise(), el.add(el.mul(el.square(el.cycle(1)), 0.3), 0.8))
+    //   //     )
+    //   //   )
+    //   // )
+    // })
+    return core
+  }, [])
+
+  useEffect(() => {
+    if (animating) return
 
     twgl.resizeCanvasToDisplaySize(gl.canvas as HTMLCanvasElement)
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
@@ -129,12 +152,19 @@ function Scene() {
 
     let setNdx = 0
 
+    const soundReading = {
+      speeds: new Float32Array(speeds.length),
+      previousSpeeds: new Float32Array(speeds.length),
+      headings: new Float32Array(velocities.length)
+    }
+
     props.current = {
       ...props.current,
       setNdx,
       tfBufferInfo1,
       tfBufferInfo2,
-      core
+      core,
+      soundReading
     }
   }, [])
 
@@ -202,12 +232,51 @@ function Scene() {
     props.current = { ...props.current, sets, feedbackProgramInfo }
   }, [animating, gl, ctx, vertexShader, fragmentShader])
 
+  const normChange = useNormalize(0, { signed: true, cancelAbove: 0.7 })
+
   useEffect(() => {
     console.log('reconstructing animation')
 
+    const sound = () => {
+      const {
+        tfBufferInfo1,
+        tfBufferInfo2,
+        setNdx,
+        soundReading: { speeds, previousSpeeds, headings },
+        core
+      } = props.current
+      gl.bindBuffer(
+        gl.TRANSFORM_FEEDBACK_BUFFER,
+        tfBufferInfo1.attribs!.a_speedOut.buffer
+      )
+      previousSpeeds.set(speeds)
+      gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, speeds)
+      const speedChange = speeds.map((x, i) => previousSpeeds[i] - x)
+      const change = (_.sum(speedChange) / speeds.length) * 1000
+
+      probLog(0.1, change)
+      const channel = el.mul(
+        el.lowpass(
+          el.smooth(
+            el.tau2pole(0.2),
+            el.const({
+              key: 'freq',
+              value: 500 + (change < 0 ? change * 300 : change * 200)
+            })
+          ),
+          3,
+          el.noise()
+        ),
+        0.7
+      )
+      core.render(channel, channel)
+    }
+
     const animate = ({ time, timeDelta }) => {
       if (!animating || !gl) return
-      const { tex, setNdx, array, sets, feedbackProgramInfo } = props.current
+      const { tex, setNdx, array, sets, feedbackProgramInfo, tfBufferInfo1 } =
+        props.current
+      sound()
       // gl.clear()
       // return props
       twgl.resizeCanvasToDisplaySize(gl.canvas as HTMLCanvasElement)
@@ -226,7 +295,6 @@ function Scene() {
       twgl.setBuffersAndAttributes(gl, feedbackProgramInfo, tfVAInfo)
       gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, feedback)
       gl.beginTransformFeedback(gl.POINTS)
-
       twgl.setUniforms(feedbackProgramInfo, {
         u_deltaTime: timeDelta,
         u_time: time,
@@ -272,6 +340,10 @@ function Scene() {
       window.cancelAnimationFrame(animationFrame)
     }
   }, [animating])
+
+  useEventListener('resize', () => {
+    // twgl.resizeCanvasToDisplaySize(gl.canvas as HTMLCanvasElement)
+  })
 
   return <></>
 }

@@ -15,10 +15,10 @@ uniform sampler2D u_sampler;
 
 void main() {
   vec2 normVel = normalize(a_velocity);
-  vec4 positionSample = texture(u_sampler, mod((a_positionIn * 0.5f + 0.5f) + normVel * 0.01f, 1.0f));
+  vec4 speedSample = texture(u_sampler, mod((a_positionIn * 0.5f + 0.5f) + normVel * 0.5f, 1.0f));
   a_positionOut = mod(a_positionIn + 1.0f + normVel * a_speedIn * 0.01f, vec2(2)) - 1.0f;
-  float SPD = 0.01f;
-  a_speedOut = SPD + ((1.0f - SPD) * positionSample.w);
+  float min_spd = 0.01f;
+  a_speedOut = min_spd + ((1.0f - min_spd) * pow(speedSample.w, 0.4f));
   v_color = a_color;
 
   gl_PointSize = 1.0f;
