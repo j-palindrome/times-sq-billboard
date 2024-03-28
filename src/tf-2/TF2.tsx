@@ -7,9 +7,18 @@ import vertexShader from './v.vert'
 import { el } from '@elemaudio/core'
 import WebRenderer from '@elemaudio/web-renderer'
 import p5 from 'p5'
-import { probLog, useEventListener, measureCurvature } from '../util/util'
+import {
+  probLog,
+  useEventListener,
+  measureCurvature,
+  scale,
+  rad
+} from '../util/util'
 import * as math from 'mathjs'
 import { useNormalize } from '../util/animation'
+import { Pt } from 'pts'
+import FractalNoise from './FractalNoise?url'
+import { useInterval } from '../util/util'
 
 const c = {
   POINTS: 100,
@@ -31,10 +40,12 @@ export default function TF2() {
       {!gl && (
         <div className='fixed z-100 h-screen w-screen top-0 left-0 bg-black text-white flex items-center justify-center'>
           <button
-            onClick={() => {
+            onClick={async () => {
+              const ctx = new AudioContext()
+              await ctx.audioWorklet.addModule(FractalNoise)
               setContexts({
                 gl: frame.current.getContext('webgl2')!,
-                ctx: new AudioContext()
+                ctx
               })
             }}>
             start
@@ -45,6 +56,13 @@ export default function TF2() {
       {gl && ctx && <SceneMemo gl={gl} ctx={ctx} />}
     </>
   )
+}
+
+const presets = {
+  floating_lines: {
+    u_circleSize: 0.2,
+    u_speed: 40
+  }
 }
 type propsType = {
   setNdx: number
@@ -61,6 +79,8 @@ type propsType = {
   soundReading: {
     speeds: Float32Array
     previousSpeeds: Float32Array
+    pan: Float32Array
+    previousPan: Float32Array
     headings: Float32Array
   }
 }
@@ -69,9 +89,21 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
   const [animating, setAnimating] = useState(false)
   const props = useRef<propsType>({} as any)
 
-  const core = useMemo(() => {
+  const { core, analyzer } = useMemo(() => {
     const core = new WebRenderer()
-    core.initialize(ctx, {}).then(node => node.connect(ctx.destination))
+    const analyzer = ctx.createGain()
+    core
+      .initialize(ctx, { numberOfInputs: 1, numberOfOutputs: 1 })
+      .then(node => {
+        const worklet = new AudioWorkletNode(ctx, 'FractalNoise', {
+          channelCount: 1,
+          numberOfInputs: 0,
+          numberOfOutputs: 1
+        })
+        worklet.connect(node)
+        // worklet.connect(analyzer.gain)
+        node.connect(ctx.destination)
+      })
 
     core.on('load', () => setAnimating(true))
     // core.on('load', () => {
@@ -86,7 +118,7 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
     //   //   )
     //   // )
     // })
-    return core
+    return { core, analyzer }
   }, [])
 
   useEffect(() => {
@@ -101,9 +133,12 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
     const velocities: number[] = []
     const colors: number[] = []
     const speeds: number[] = []
-    for (let i = 0; i < numParticles; ++i) {
+    for (let i = 0; i < numParticles; i++) {
       positions.push(_.random(-1, 1, true), _.random(-1, 1, true))
-      velocities.push(_.random(-0.1, 0.1), _.random(-0.1, 0.1))
+      velocities.push(
+        Math.sin(rad(i / numParticles)),
+        Math.cos(rad(i / numParticles))
+      )
       colors.push(
         // ...(Math.random() < 0.01 ? [1.0, 0.0, 0.0, 1.0] : [1.0, 1.0, 1.0, 0.3])
         1.0,
@@ -120,7 +155,8 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
       a_velocity: { numComponents: 2, data: new Float32Array(velocities) },
       a_color: { numComponents: 4, data: new Float32Array(colors) },
       a_speedIn: { numComponents: 1, data: new Float32Array(speeds) },
-      a_speedOut: { numComponents: 1, data: new Float32Array(speeds) }
+      a_speedOut: { numComponents: 1, data: new Float32Array(speeds) },
+      a_audioOut: { numComponents: 1, data: new Float32Array(speeds) }
     })
 
     const tfBufferInfo2 = twgl.createBufferInfoFromArrays(gl, {
@@ -147,6 +183,11 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
       a_speedOut: {
         numComponents: 1,
         buffer: tfBufferInfo1.attribs!.a_speedIn.buffer
+      },
+      a_audioOut: {
+        numComponents: 1,
+        // we write to the same buffer as tfBufferInfo1 because we just want to read it
+        buffer: tfBufferInfo1.attribs!.a_audioOut.buffer
       }
     })
 
@@ -155,6 +196,8 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
     const soundReading = {
       speeds: new Float32Array(speeds.length),
       previousSpeeds: new Float32Array(speeds.length),
+      pan: new Float32Array(speeds.length),
+      previousPan: new Float32Array(speeds.length),
       headings: new Float32Array(velocities.length)
     }
 
@@ -192,7 +235,7 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
       gl,
       [vertexShader, fragmentShader],
       {
-        transformFeedbackVaryings: ['a_positionOut', 'a_speedOut']
+        transformFeedbackVaryings: ['a_positionOut', 'a_speedOut', 'a_audioOut']
       }
     )
 
@@ -242,34 +285,60 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
         tfBufferInfo1,
         tfBufferInfo2,
         setNdx,
-        soundReading: { speeds, previousSpeeds, headings },
+        soundReading: { speeds, previousSpeeds, pan, previousPan },
         core
       } = props.current
+      previousSpeeds.set(speeds)
+      previousPan.set(pan)
       gl.bindBuffer(
         gl.TRANSFORM_FEEDBACK_BUFFER,
         tfBufferInfo1.attribs!.a_speedOut.buffer
       )
-      previousSpeeds.set(speeds)
       gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, speeds)
-      const speedChange = speeds.map((x, i) => previousSpeeds[i] - x)
-      const change = (_.sum(speedChange) / speeds.length) * 1000
+      gl.bindBuffer(
+        gl.TRANSFORM_FEEDBACK_BUFFER,
+        tfBufferInfo1.attribs!.a_audioOut.buffer
+      )
+      gl.getBufferSubData(gl.TRANSFORM_FEEDBACK_BUFFER, 0, pan)
 
-      probLog(0.1, change)
-      const channel = el.mul(
-        el.lowpass(
+      const speedChange = speeds.map((x, i) => previousSpeeds[i] - x)
+      const change = (_.sum(speedChange) / speeds.length) * 100
+      const averagePan = (_.sum(pan) / pan.length) * 1000
+
+      // get the buffers about the speed...add a "input" processing array in TF
+
+      // probLog(0.1, change)
+      const PAN_CHANGE_SCALE = 0.1
+      const channel = (chan: 0 | 1) =>
+        el.mul(
+          el.lowpass(
+            el.smooth(
+              el.tau2pole(0.5),
+              el.const({
+                key: 'freq',
+                value: 500 + (change < 0 ? change * 500 : change * 4000)
+              })
+            ),
+            1,
+            // @ts-ignore
+            el.in({ channel: 0 })
+          ),
+          // el.pinknoise(),
           el.smooth(
             el.tau2pole(0.2),
             el.const({
-              key: 'freq',
-              value: 500 + (change < 0 ? change * 300 : change * 200)
+              key: `${chan}:pan`,
+              value: scale(
+                averagePan,
+                chan ? 0 : PAN_CHANGE_SCALE * -1,
+                chan ? PAN_CHANGE_SCALE : 0,
+                chan,
+                (chan + 1) % 2
+              )
             })
-          ),
-          3,
-          el.noise()
-        ),
-        0.7
-      )
-      core.render(channel, channel)
+          )
+        )
+      core.render(channel(0), channel(1))
     }
 
     const animate = ({ time, timeDelta }) => {
@@ -298,7 +367,9 @@ function Scene({ gl, ctx }: { gl: WebGL2RenderingContext; ctx: AudioContext }) {
       twgl.setUniforms(feedbackProgramInfo, {
         u_deltaTime: timeDelta,
         u_time: time,
-        u_sampler: tex
+        u_sampler: tex,
+        u_circleSize: 0.05,
+        u_speed: 40
       })
       twgl.drawBufferInfo(gl, tfVAInfo, gl.POINTS)
       gl.endTransformFeedback()

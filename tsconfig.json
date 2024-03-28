@@ -23,6 +23,6 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["vite-plugin-glsl/ext"]
   },
-  "include": ["src"],
+  "include": ["app"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
